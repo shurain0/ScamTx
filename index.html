@@ -82,7 +82,7 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 /* camera */
 .cam{position:fixed;inset:0;background:#000;color:#fff;display:none;flex-direction:column;z-index:20}
 .cam.open{display:flex}
-.cam-top{display:flex;justify-content:space-between;align-items:center;gap:8px;
+.cam-top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;
   padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;background:rgba(0,0,0,.55)}
 .cam-count{font-weight:700;font-size:1.05rem}
 .chip{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:99px;padding:6px 14px;font-size:.9rem}
@@ -159,6 +159,27 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
     </div>
   </div>
 
+  <div class="panel" style="margin-top:12px">
+    <div class="field">
+      <label class="lb">取り込むときの向き</label>
+      <div class="seg" id="segR">
+        <button data-v="0">そのまま</button><button data-v="90">右に回す</button><button data-v="270">左に回す</button><button data-v="180">上下逆</button>
+      </div>
+      <p class="hint">横持ちで撮って文字が横を向いてしまう場合は「右に回す」か「左に回す」を選んでください。撮影中も上の「向き」ボタンで切り替えられ、左下の小さな画像で結果を確認できます。</p>
+    </div>
+    <div class="field">
+      <label class="lb">自動撮影</label>
+      <div class="seg" id="segM">
+        <button data-v="normal">ふつう</button><button data-v="fast">高速</button><button data-v="manual">手動</button>
+      </div>
+      <p class="hint">高速は、めくって手を離した直後に撮影します。慣れてきたら高速がおすすめです。撮影中は上のボタンをタップするたびに「自動→高速→手動」と切り替わります。画面のどこをタップしても撮影できます。</p>
+    </div>
+  </div>
+
+  <h2>きれいなPDFにする</h2>
+  <a class="btn" href="clean.html" style="text-align:center;text-decoration:none;color:var(--ink)">仕上げアプリを開く</a>
+  <p class="hint">影・指・ページの歪みを補正し、ページの被りや抜けをチェックしてからPDFを作ります。</p>
+
   <h2>Claudeに渡す</h2>
   <div class="panel">
     <div class="field">
@@ -186,6 +207,7 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 <div class="cam" id="cam" role="dialog" aria-label="撮影">
   <div class="cam-top">
     <span class="cam-count" id="camCount">0ページ</span>
+    <button class="chip" id="rotChip">向き</button>
     <button class="chip" id="autoChip" aria-pressed="true">自動撮影</button>
     <button class="done" id="camDone">完了</button>
   </div>
@@ -229,7 +251,8 @@ const PRESETS={light:{side:1280,q:0.6,label:"1ページ約80〜150KB。文字が
                std:{side:1600,q:0.68,label:"1ページ約150〜300KB。ふつうの教科書ならこれで十分です"},
                high:{side:2048,q:0.75,label:"1ページ約300〜500KB。細かい注釈や数式が多い本向け"}};
 const S={books:[],bookId:null,pages:[],urls:new Map(),
-  settings:{quality:"std",color:"color",auto:true,perFile:50}};
+  settings:{quality:"std",color:"color",mode:"normal",rot:0,perFile:50}};
+const MODES={normal:{label:"自動",need:900,cool:700,move:9,still:3.2},fast:{label:"高速",need:380,cool:250,move:7,still:4.2},manual:{label:"手動"}};
 
 /* ---------- IndexedDB ---------- */
 let dbp=null;
@@ -323,7 +346,10 @@ function setSeg(id,val){document.querySelectorAll("#"+id+" button").forEach(b=>b
 function renderSettings(){
   setSeg("segQ",S.settings.quality);setSeg("segC",S.settings.color);setSeg("segP",S.settings.perFile);
   $("qHint").textContent=PRESETS[S.settings.quality].label+(S.settings.color==="gray"?"（白黒ならさらに3〜4割小さく）":"");
-  $("autoChip").setAttribute("aria-pressed",String(S.settings.auto));
+  setSeg("segM",S.settings.mode);setSeg("segR",S.settings.rot||0);
+  $("rotChip").textContent={0:"向き：そのまま",90:"向き：右",270:"向き：左",180:"向き：逆"}[S.settings.rot||0];
+  $("autoChip").textContent=MODES[S.settings.mode].label;
+  $("autoChip").setAttribute("aria-pressed",String(S.settings.mode!=="manual"));
 }
 function renderPrompt(){
   const b=curBook();const t=b&&b.title?b.title:"この教科書";
@@ -341,11 +367,12 @@ async function saveSettings(){await putMeta("settings",S.settings);renderSetting
 function processSource(src,w,h){
   const p=PRESETS[S.settings.quality];
   const sc=Math.min(1,p.side/Math.max(w,h));
-  const cw=Math.round(w*sc),ch=Math.round(h*sc);
+  const dw=Math.round(w*sc),dh=Math.round(h*sc),rot=S.settings.rot||0;
+  const cw=rot%180?dh:dw,ch=rot%180?dw:dh;
   const c=document.createElement("canvas");c.width=cw;c.height=ch;
   const x=c.getContext("2d",{willReadFrequently:true});
   x.imageSmoothingQuality="high";
-  x.drawImage(src,0,0,cw,ch);
+  x.translate(cw/2,ch/2);x.rotate(rot*Math.PI/180);x.drawImage(src,-dw/2,-dh/2,dw,dh);x.setTransform(1,0,0,1,0,0);
   if(S.settings.color==="gray"){
     const id=x.getImageData(0,0,cw,ch),d=id.data,n=cw*ch;
     const hist=new Uint32Array(256);const g=new Uint8Array(n);
@@ -406,7 +433,7 @@ async function startStream(){
   try{await v.play();}catch(e){}
   try{if(navigator.wakeLock) cam.wake=await navigator.wakeLock.request("screen");}catch(e){}
   AC.prev=null;AC.moving=false;AC.stillSince=0;
-  setStatus(cam.retakeId?"シャッターを押してください":(S.settings.auto?"最初のページはシャッターで。あとはめくるだけで自動撮影します":"シャッターで撮影します"));
+  setStatus(cam.retakeId?"シャッターを押してください":(S.settings.mode!=="manual"?"最初のページは画面をタップ。あとはめくるだけで自動撮影します":"画面をタップすると撮影します"));
   cam.timer=setInterval(autoTick,120);
 }
 function stopStream(){
@@ -438,15 +465,16 @@ function autoTick(){
   let diff=0;
   if(AC.prev){for(let j=0;j<3072;j++) diff+=Math.abs(g[j]-AC.prev[j]);diff/=3072;}
   AC.prev=g;
-  if(!S.settings.auto||cam.retakeId){$("meter").style.width="0";return;}
+  const M=MODES[S.settings.mode];
+  if(S.settings.mode==="manual"||cam.retakeId){$("meter").style.width="0";return;}
   const now=performance.now();
-  if(diff>9){AC.moving=true;AC.stillSince=0;$("meter").style.width="0";setStatus("めくり中…");}
-  else if(diff<3.2){
+  if(diff>M.move){AC.moving=true;AC.stillSince=0;$("meter").style.width="0";setStatus("めくり中…");}
+  else if(diff<M.still){
     if(AC.moving&&now>AC.cool){
       if(!AC.stillSince) AC.stillSince=now;
-      const el=now-AC.stillSince,need=900;
+      const el=now-AC.stillSince,need=M.need;
       $("meter").style.width=Math.min(100,el/need*100)+"%";
-      if(el>=need){AC.moving=false;AC.stillSince=0;AC.cool=now+700;$("meter").style.width="0";shoot();}
+      if(el>=need){AC.moving=false;AC.stillSince=0;AC.cool=now+M.cool;$("meter").style.width="0";shoot();}
       else setStatus("止まったら撮影します");
     }
   }else{AC.stillSince=0;}
@@ -557,8 +585,11 @@ bindSeg("segQ","quality");bindSeg("segC","color");bindSeg("segP","perFile",Numbe
 $("openCam").onclick=()=>openCamera(null);
 $("camDone").onclick=()=>{closeCamera();toast(S.pages.length+"ページ保存済み");};
 $("shutter").onclick=()=>{if(cam.fallback){$("retakePicker").click();return;}AC.moving=false;AC.stillSince=0;shoot();};
-$("autoChip").onclick=()=>{S.settings.auto=!S.settings.auto;saveSettings();
-  setStatus(S.settings.auto?"めくって止まったら自動で撮影します":"シャッターで撮影します");};
+$("autoChip").onclick=()=>{const o=["normal","fast","manual"];S.settings.mode=o[(o.indexOf(S.settings.mode)+1)%3];saveSettings();
+  setStatus(S.settings.mode==="manual"?"画面をタップすると撮影します":MODES[S.settings.mode].label+"モード：めくって手を離すと撮影します");};
+$("stage").addEventListener("click",e=>{if(cam.fallback||e.target.closest("button"))return;AC.moving=false;AC.stillSince=0;shoot();});
+bindSeg("segM","mode");bindSeg("segR","rot",Number);
+$("rotChip").onclick=()=>{const o=[0,90,270,180];S.settings.rot=o[(o.indexOf(S.settings.rot||0)+1)%4];saveSettings();};
 $("pickBtn").onclick=()=>$("picker").click();
 $("picker").onchange=e=>{addFiles(e.target.files);e.target.value="";};
 $("retakePicker").onchange=e=>{const rid=cam.retakeId;addFiles(e.target.files,rid).then(()=>{updateLast();if(rid){closeCamera();}else{const bx=$("camErr");if(bx){const p=bx.querySelector("p");p.textContent=S.pages.length+"ページ目まで保存しました。次のページをめくってボタンを押してください。";}}});e.target.value="";};
@@ -595,7 +626,7 @@ $("vRetake").onclick=()=>{const id=S.pages[vi].id;closeViewer();openCamera(id);}
 /* ---------- init ---------- */
 (async function init(){
   try{
-    const st=await getMeta("settings");if(st) Object.assign(S.settings,st);
+    const st=await getMeta("settings");if(st){Object.assign(S.settings,st);if(!MODES[S.settings.mode])S.settings.mode=st.auto===false?"manual":"normal";delete S.settings.auto;}
     await loadBooks();
     const cur=await getMeta("currentBook");
     await selectBook(S.books.some(b=>b.id===cur)?cur:S.books[0].id);

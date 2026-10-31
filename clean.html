@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>教科書PDF仕上げ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --paper:#F6F7F9; --surface:#FFFFFF; --ink:#1D2433; --muted:#5B6475; --line:#DCE0E7;
+  --marker:#FFE14D; --marker-ink:#3A3000; --danger:#B83A26; --ok:#2E7D4F; --warn:#9A5B00;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#13161C; --surface:#1B1F27; --ink:#E7EAF0; --muted:#9AA3B2; --line:#2B313B;
+    --marker:#F2D33C; --marker-ink:#2A2300; --danger:#F07A63; --ok:#6CCB93; --warn:#E8B04A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#13161C; --surface:#1B1F27; --ink:#E7EAF0; --muted:#9AA3B2; --line:#2B313B;
+  --marker:#F2D33C; --marker-ink:#2A2300; --danger:#F07A63; --ok:#6CCB93; --warn:#E8B04A; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;font-size:16px;line-height:1.6}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
+a{color:inherit}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 60px}
+header{padding:6px 0 14px;border-bottom:1px solid var(--line)}
+.back{font-size:.9rem;color:var(--muted);text-decoration:none}
+h1{font-size:1.6rem;margin:4px 0 0;line-height:1.3}
+h1 .mark{background:linear-gradient(transparent 58%,var(--marker) 58%)}
+.stats{color:var(--muted);font-size:.9rem}
+h2{font-size:1.05rem;margin:28px 0 10px;display:flex;gap:10px;align-items:baseline}
+h2 .n{display:inline-grid;place-items:center;width:1.6em;height:1.6em;border-radius:50%;background:var(--ink);color:var(--paper);font-size:.85rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{flex:1;min-width:130px;padding:13px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700}
+.btn.primary{background:var(--marker);color:var(--marker-ink);border-color:var(--marker)}
+.btn.dark{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:transparent;font-weight:500}
+.btn:disabled{opacity:.5}
+.hint{color:var(--muted);font-size:.85rem;margin:8px 0 0}
+.check{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.92rem}
+.check input{width:20px;height:20px}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:12px;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+.prog{font-size:.9rem;color:var(--muted);margin-top:6px;min-height:1.4em}
+select{padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);flex:1;min-width:0}
+
+.issue{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;padding:12px;margin-bottom:10px}
+.issue.missing{border-left-color:var(--danger)}
+.issue h3{margin:0 0 8px;font-size:.98rem}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pick{position:relative;border:2px solid var(--line);border-radius:8px;padding:0;overflow:hidden;background:var(--paper);aspect-ratio:3/4}
+.pick img{width:100%;height:100%;object-fit:contain;display:block;background:#fff}
+.pick b{position:absolute;left:6px;top:6px;padding:0 8px;border-radius:5px;font-size:.8rem;background:var(--ok);color:#fff}
+.pick.del{border-color:var(--danger)}
+.pick.del b{background:var(--danger)}
+.pick.del img{opacity:.45}
+.pick small{position:absolute;right:6px;bottom:6px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:.75rem}
+.ok-msg{color:var(--ok);font-weight:700}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.thumb{position:relative;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:0;overflow:hidden;aspect-ratio:3/4}
+.thumb img{width:100%;height:100%;object-fit:contain;display:block;background:#fff}
+.thumb span{position:absolute;left:4px;bottom:4px;background:var(--surface);font-size:.75rem;padding:0 6px;border-radius:4px;border:1px solid var(--line)}
+.thumb span.est{color:var(--muted);font-style:italic}
+.thumb span.unk{color:var(--warn)}
+.thumb .wait{position:absolute;inset:0;display:grid;place-items:center;font-size:.8rem;color:var(--muted)}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px}
+.seg button{flex:1;border:none;background:transparent;padding:10px 4px;font-size:.92rem}
+.seg button[aria-pressed="true"]{background:var(--marker);color:var(--marker-ink);font-weight:700}
+.field{margin:12px 0}
+.field label{font-weight:500}
+.txt{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--paper);margin-top:6px}
+
+/* editor */
+.ed{position:fixed;inset:0;z-index:30;background:#111;color:#fff;display:none;flex-direction:column}
+.ed.open{display:flex}
+.ed-top{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 8px}
+.ed-top strong{font-size:1rem}
+.wbtn{background:#fff;color:#000;border:none;border-radius:99px;padding:6px 16px;font-weight:700}
+.ed-stage{flex:1;min-height:0;position:relative}
+.ed-stage canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.ed-busy{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:4px 12px;border-radius:99px;font-size:.85rem;display:none}
+.tools{padding:8px 10px calc(env(safe-area-inset-bottom,0px) + 10px);background:#1c1c1c;display:grid;gap:8px}
+.trow{display:flex;gap:6px;align-items:center;overflow-x:auto}
+.tb{flex:0 0 auto;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:99px;padding:7px 12px;font-size:.88rem}
+.tb[aria-pressed="true"]{background:#FFE14D;color:#2A2300;border-color:#FFE14D;font-weight:700}
+.tb.red{color:#FF9B88}
+.trow input[type=number]{width:72px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.3);background:#000;color:#fff}
+.trow input[type=range]{flex:1;min-width:80px}
+.trow label{font-size:.85rem;color:#ccc;white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;opacity:0;transition:.2s;z-index:50;pointer-events:none;max-width:90%}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="index.html">← スキャナーに戻る</a>
+    <h1><span class="mark">教科書PDF仕上げ</span></h1>
+    <div class="stats" id="stats">読み込み中…</div>
+  </header>
+
+  <h2><span class="n">1</span>読み込む</h2>
+  <div class="panel">
+    <div class="row">
+      <button class="btn primary" id="pdfBtn">PDFを開く</button>
+      <button class="btn" id="imgBtn">画像を追加</button>
+    </div>
+    <div class="row" id="scanRow" style="margin-top:10px;display:none">
+      <select id="scanSel"></select>
+      <button class="btn" id="scanBtn" style="flex:0 0 auto">スキャナーから読み込む</button>
+    </div>
+    <div class="field"><label>読み込むときの向き</label>
+      <div class="seg" id="segR"><button data-v="0">そのまま</button><button data-v="90">右に回す</button><button data-v="270">左に回す</button><button data-v="180">上下逆</button></div>
+      <p class="hint">文字が横向きのPDFは、ここで向きを選んでから読み込んでください。見開きの分割も正しく行われます。</p></div>
+    <label class="check"><input type="checkbox" id="splitChk" checked>横長の見開き写真は左右2ページに分ける</label>
+    <div class="bar" id="bar"><i id="barI"></i></div>
+    <div class="prog" id="prog"></div>
+    <p class="hint">読み込んだページは自動で「歪み補正・影の除去・指の除去」を行います。途中で閉じても、次に開いたときに続きから処理します。</p>
+    <input type="file" id="pdfIn" accept="application/pdf" hidden>
+    <input type="file" id="imgIn" accept="image/*" multiple hidden>
+    <input type="file" id="addCam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="addPick" accept="image/*" hidden>
+  </div>
+
+  <h2><span class="n">2</span>被りと抜けのチェック</h2>
+  <div id="checks"><p class="hint">ページを読み込むと、ページ番号を読み取ってチェックします。</p></div>
+  <div class="row" style="margin-top:6px"><button class="btn" id="recheckBtn">もう一度チェック</button></div>
+
+  <h2><span class="n">3</span>確認と編集</h2>
+  <p class="hint" style="margin-top:0">ページをタップすると、補正の切り替え・消しゴム・回転・ページ番号の修正・並べ替えができます。番号の後ろに「?」が付いているものは推定です。</p>
+  <div class="row" style="margin-bottom:10px"><button class="btn" id="rotAllL">全ページを左に回す</button><button class="btn" id="rotAllR">全ページを右に回す</button></div>
+  <div class="grid" id="grid"></div>
+
+  <h2><span class="n">4</span>PDFを作る</h2>
+  <div class="panel">
+    <div class="field"><label for="titleIn">ファイル名</label><input class="txt" id="titleIn" maxlength="40"></div>
+    <div class="field"><label>色</label>
+      <div class="seg" id="segC"><button data-v="color">カラー</button><button data-v="gray">白黒</button></div>
+      <p class="hint">書き込みを本文と区別したいときはカラーにしてください。</p></div>
+    <div class="field"><label>1ファイルあたりのページ数</label>
+      <div class="seg" id="segP"><button data-v="30">30</button><button data-v="50">50</button><button data-v="90">90</button><button data-v="9999">分けない</button></div></div>
+    <button class="btn dark" id="exportBtn" style="width:100%">きれいなPDFを作成</button>
+    <div class="prog" id="exProg"></div>
+  </div>
+
+  <h2>プロジェクト</h2>
+  <button class="btn danger" id="resetBtn" style="width:100%">仕上げ中のデータをすべて消す</button>
+  <p class="hint">スキャナーアプリで撮ったデータは消えません。</p>
+</div>
+
+<div class="ed" id="ed" role="dialog" aria-label="ページの編集">
+  <div class="ed-top"><strong id="edLabel"></strong><button class="wbtn" id="edClose">完了</button></div>
+  <div class="ed-stage" id="edStage"><canvas id="edCv"></canvas><div class="ed-busy" id="edBusy">補正中…</div></div>
+  <div class="tools">
+    <div class="trow">
+      <button class="tb" id="tDew">歪み補正</button>
+      <button class="tb" id="tSha">影の除去</button>
+      <button class="tb" id="tFin">指の除去</button>
+      <button class="tb" id="tRot">回転</button>
+      <button class="tb" id="tOrig">補正前を見る</button>
+    </div>
+    <div class="trow">
+      <button class="tb" id="tErase">消しゴム</button>
+      <label for="tSize">太さ</label><input type="range" id="tSize" min="1" max="12" value="4">
+      <button class="tb" id="tUndo">1つ戻す</button>
+    </div>
+    <div class="trow">
+      <label for="tNum">ページ番号</label><input type="number" id="tNum" min="1" max="1999" inputmode="numeric">
+      <button class="tb" id="tUp">前へ移動</button>
+      <button class="tb" id="tDown">後ろへ移動</button>
+      <button class="tb red" id="tDel">削除</button>
+    </div>
+    <div class="trow">
+      <button class="tb" id="tPrev" style="flex:1">前のページ</button>
+      <button class="tb" id="tNext" style="flex:1">次のページ</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_W="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const TESS="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const SRC_MAX=2200, OUT_MAX=1800;
+const P={pages:[],settings:{title:"",color:"color",perFile:50,split:true,rot:0},ignored:[],keep:[],seen:[]};
+const urls=new Map();
+
+/* ---------- utils ---------- */
+let tT;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(tT);tT=setTimeout(()=>t.classList.remove("on"),2400);}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const scripts={};
+function loadScript(src){
+  if(!scripts[src]) scripts[src]=new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>{delete scripts[src];rej(new Error("読み込みに失敗しました（通信を確認してください）"));};document.head.appendChild(s);});
+  return scripts[src];
+}
+function setBar(f,msg){$("bar").style.display=f==null?"none":"block";$("barI").style.width=((f||0)*100)+"%";if(msg!=null)$("prog").textContent=msg;}
+function blobJ(buf){return new Blob([buf],{type:"image/jpeg"});}
+function urlOf(p){if(!p.out)return null;if(!urls.has(p.id))urls.set(p.id,URL.createObjectURL(blobJ(p.out)));return urls.get(p.id);}
+function dropUrl(id){const u=urls.get(id);if(u){URL.revokeObjectURL(u);urls.delete(id);}}
+function canvas(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;return c;}
+function encode(c,q){return new Promise((res,rej)=>c.toBlob(b=>b?b.arrayBuffer().then(res):rej(new Error("画像の変換に失敗しました")),"image/jpeg",q));}
+
+/* ---------- IndexedDB ---------- */
+let dbp;
+function openDB(){if(dbp)return dbp;dbp=new Promise((res,rej)=>{const r=indexedDB.open("tb-cleaner",1);
+  r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains("pages"))d.createObjectStore("pages",{keyPath:"id"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta");};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});return dbp;}
+async function idb(store,mode,op){const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction(store,mode);const r=op(t.objectStore(store));t.oncomplete=()=>res(r?r.result:undefined);t.onerror=t.onabort=()=>rej(t.error||new Error("保存に失敗しました"));});}
+function rec(p){const o={...p};delete o.busy;return o;}
+const savePage=p=>idb("pages","readwrite",s=>s.put(rec(p)));
+const delPage=id=>idb("pages","readwrite",s=>s.delete(id));
+const putMeta=(k,v)=>idb("meta","readwrite",s=>s.put(v,k));
+const getMeta=k=>idb("meta","readonly",s=>s.get(k));
+function saveMeta(){return putMeta("state",{settings:P.settings,ignored:P.ignored,keep:P.keep,seen:P.seen});}
+
+/* ---------- image math ---------- */
+function otsu(g){const h=new Float64Array(256);for(let i=0;i<g.length;i++)h[g[i]]++;const n=g.length;let sum=0;for(let i=0;i<256;i++)sum+=i*h[i];
+  let sB=0,wB=0,best=-1,t=128;for(let i=0;i<256;i++){wB+=h[i];if(!wB)continue;const wF=n-wB;if(!wF)break;sB+=i*h[i];const mB=sB/wB,mF=(sum-sB)/wF,b=wB*wF*(mB-mF)*(mB-mF);if(b>best){best=b;t=i;}}return t;}
+function solve(A){const n=A.length;for(let i=0;i<n;i++){let m=i;for(let k=i+1;k<n;k++)if(Math.abs(A[k][i])>Math.abs(A[m][i]))m=k;[A[i],A[m]]=[A[m],A[i]];
+  const p=A[i][i]||1e-12;for(let k=i+1;k<n;k++){const f=A[k][i]/p;for(let j=i;j<=n;j++)A[k][j]-=f*A[i][j];}}
+  const x=new Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=A[i][n];for(let j=i+1;j<n;j++)s-=A[i][j]*x[j];x[i]=s/(A[i][i]||1e-12);}return x;}
+function polyfit(xs,ys,deg){const m=deg+1,A=Array.from({length:m},()=>new Array(m+1).fill(0));
+  for(let k=0;k<xs.length;k++){const pw=[1];for(let i=1;i<=2*deg;i++)pw.push(pw[i-1]*xs[k]);for(let i=0;i<m;i++){for(let j=0;j<m;j++)A[i][j]+=pw[i+j];A[i][m]+=pw[i]*ys[k];}}return solve(A);}
+const pev=(c,x)=>{let v=0;for(let i=c.length-1;i>=0;i--)v=v*x+c[i];return v;};
+function median(a){const b=[...a].sort((x,y)=>x-y);return b.length?b[b.length>>1]:0;}
+function robustFit(xs,ys,lo,hi){const cx=(lo+hi)/2,hx=Math.max(1,(hi-lo)/2);let X=xs.map(x=>(x-cx)/hx),Y=ys;
+  let c=polyfit(X,Y,3);for(let it=0;it<2;it++){const r=X.map((x,i)=>Math.abs(Y[i]-pev(c,x)));const mad=median(r)*1.4826;const th=Math.max(1.5,3*mad);
+    const kx=[],ky=[];X.forEach((x,i)=>{if(r[i]<=th){kx.push(x);ky.push(Y[i]);}});if(kx.length<12)break;X=kx;Y=ky;c=polyfit(X,Y,3);}
+  return x=>pev(c,(x-cx)/hx);}
+function maxFilter(a,w,h,r){const t=new Float32Array(a.length),o=new Float32Array(a.length);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let m=0;for(let k=Math.max(0,x-r);k<=Math.min(w-1,x+r);k++){const v=a[y*w+k];if(v>m)m=v;}t[y*w+x]=m;}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let m=0;for(let k=Math.max(0,y-r);k<=Math.min(h-1,y+r);k++){const v=t[k*w+x];if(v>m)m=v;}o[y*w+x]=m;}return o;}
+function boxBlur(a,w,h,r){const t=new Float32Array(a.length),o=new Float32Array(a.length);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0,n=0;for(let k=Math.max(0,x-r);k<=Math.min(w-1,x+r);k++){s+=a[y*w+k];n++;}t[y*w+x]=s/n;}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0,n=0;for(let k=Math.max(0,y-r);k<=Math.min(h-1,y+r);k++){s+=t[k*w+x];n++;}o[y*w+x]=s/n;}return o;}
+
+/* 歪み補正：紙の上端・下端の曲線を検出して平らに引き伸ばす */
+function dewarp(img){
+  const W=img.width,H=img.height,D=img.data,sw=320,sc=sw/W,sh=Math.max(20,Math.round(H*sc));
+  const g=new Uint8Array(sw*sh);
+  for(let y=0;y<sh;y++){const sy=Math.min(H-1,Math.floor((y+.5)/sc));for(let x=0;x<sw;x++){const sx=Math.min(W-1,Math.floor((x+.5)/sc));const i=(sy*W+sx)*4;g[y*sw+x]=(D[i]*77+D[i+1]*150+D[i+2]*29)>>8;}}
+  const t=otsu(g);let br=0;for(let i=0;i<g.length;i++)if(g[i]>t)br++;const fr=br/g.length;if(fr<0.3||fr>0.97)return null;
+  const colB=new Float32Array(sw);for(let x=0;x<sw;x++){let c=0;for(let y=0;y<sh;y++)if(g[y*sw+x]>t)c++;colB[x]=c/sh;}
+  let xL=0;while(xL<sw&&colB[xL]<0.5)xL++;let xR=sw-1;while(xR>0&&colB[xR]<0.5)xR--;
+  if(xR-xL<0.4*sw)return null;
+  const tx=[],ty=[],bx=[],by=[];
+  for(let x=xL;x<=xR;x++){
+    let top=-1,run=0;for(let y=0;y<sh;y++){if(g[y*sw+x]>t){if(++run>=5){top=y-4;break;}}else run=0;}
+    let bot=-1;run=0;for(let y=sh-1;y>=0;y--){if(g[y*sw+x]>t){if(++run>=5){bot=y+4;break;}}else run=0;}
+    if(top>1&&top<0.45*sh){tx.push(x);ty.push(top);}
+    if(bot>=0&&bot<sh-2&&bot>0.55*sh){bx.push(x);by.push(bot);}
+  }
+  const span=xR-xL+1;
+  const fT=tx.length>=0.4*span?robustFit(tx,ty,xL,xR):null;
+  const fB=bx.length>=0.4*span?robustFit(bx,by,xL,xR):null;
+  if(!fT&&!fB)return null;
+  const inset=1.2;
+  const yT=X=>fT?(fT(X*sc)+inset)/sc:0, yB=X=>fB?(fB(X*sc)-inset)/sc:H-1;
+  const XL=xL/sc,XR=Math.min(W-1,(xR+1)/sc),N=256;
+  const pT=[],pB=[];for(let i=0;i<=N;i++){const X=XL+(XR-XL)*i/N;pT.push([X,yT(X)]);pB.push([X,yB(X)]);}
+  const arc=p=>{const L=[0];for(let i=1;i<p.length;i++)L.push(L[i-1]+Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]));return L;};
+  const LT=arc(pT),LB=arc(pB);
+  const outW=Math.round((LT[N]+LB[N])/2),outH=Math.round(median(pT.map((q,i)=>pB[i][1]-q[1])));
+  if(outW<0.3*W||outH<0.3*H||outW>1.4*W||outH>1.2*H)return null;
+  const inv=(p,L,u)=>{const s=u*L[N];let k=1;while(k<N&&L[k]<s)k++;const f=(s-L[k-1])/Math.max(1e-6,L[k]-L[k-1]);return[p[k-1][0]+(p[k][0]-p[k-1][0])*f,p[k-1][1]+(p[k][1]-p[k-1][1])*f];};
+  const xt=new Float32Array(outW),yt=new Float32Array(outW),xb=new Float32Array(outW),yb=new Float32Array(outW);
+  for(let u=0;u<outW;u++){const s=outW>1?u/(outW-1):0;const a=inv(pT,LT,s),b=inv(pB,LB,s);xt[u]=a[0];yt[u]=a[1];xb[u]=b[0];yb[u]=b[1];}
+  const out=new ImageData(outW,outH),O=out.data,W4=W*4;
+  for(let v=0;v<outH;v++){const f=outH>1?v/(outH-1):0;for(let u=0;u<outW;u++){
+    const sx=xt[u]+(xb[u]-xt[u])*f,sy=yt[u]+(yb[u]-yt[u])*f;
+    let x0=sx|0,y0=sy|0;if(x0<0)x0=0;if(x0>W-2)x0=W-2;if(y0<0)y0=0;if(y0>H-2)y0=H-2;
+    let fx=sx-x0,fy=sy-y0;fx=fx<0?0:fx>1?1:fx;fy=fy<0?0:fy>1?1:fy;
+    const i=(y0*W+x0)*4,o=(v*outW+u)*4,a=(1-fx)*(1-fy),b=fx*(1-fy),c=(1-fx)*fy,d=fx*fy;
+    O[o]=D[i]*a+D[i+4]*b+D[i+W4]*c+D[i+W4+4]*d;O[o+1]=D[i+1]*a+D[i+5]*b+D[i+W4+1]*c+D[i+W4+5]*d;O[o+2]=D[i+2]*a+D[i+6]*b+D[i+W4+2]*c+D[i+W4+6]*d;O[o+3]=255;}}
+  return out;
+}
+
+/* 影の除去：紙の明るさのムラを推定して割り算で平らにする */
+const LUT=(()=>{const t=new Uint8Array(512);for(let x=0;x<512;x++){let v=(x-18)/(238-18);v=v<0?0:v>1?1:v;t[x]=Math.round(Math.pow(v,1.15)*255);}return t;})();
+function flatten(img){
+  const W=img.width,H=img.height,D=img.data,f=8,sw=Math.ceil(W/f),sh=Math.ceil(H/f);
+  const ch=[0,1,2].map(()=>new Float32Array(sw*sh));
+  for(let by=0;by<sh;by++)for(let bx=0;bx<sw;bx++){const m=[0,0,0];
+    for(let y=by*f;y<Math.min(H,by*f+f);y+=2)for(let x=bx*f;x<Math.min(W,bx*f+f);x+=2){const i=(y*W+x)*4;if(D[i]>m[0])m[0]=D[i];if(D[i+1]>m[1])m[1]=D[i+1];if(D[i+2]>m[2])m[2]=D[i+2];}
+    for(let c=0;c<3;c++)ch[c][by*sw+bx]=m[c];}
+  const bg=ch.map(a=>boxBlur(boxBlur(maxFilter(a,sw,sh,3),sw,sh,3),sw,sh,2));
+  for(let c=0;c<3;c++){const s=[...bg[c]].sort((a,b)=>a-b);const paper=s[Math.floor(s.length*0.9)]||255;const fl=Math.max(40,paper*0.45);const a=bg[c];for(let i=0;i<a.length;i++)if(a[i]<fl)a[i]=fl;}
+  for(let y=0;y<H;y++){const gy=Math.min(sh-1.001,Math.max(0,(y+.5)/f-.5)),y0=gy|0,fy=gy-y0;
+    for(let x=0;x<W;x++){const gx=Math.min(sw-1.001,Math.max(0,(x+.5)/f-.5)),x0=gx|0,fx=gx-x0,k=y0*sw+x0,i=(y*W+x)*4;
+      for(let c=0;c<3;c++){const a=bg[c];const b=(a[k]*(1-fx)+a[k+1]*fx)*(1-fy)+(a[k+sw]*(1-fx)+a[k+sw+1]*fx)*fy;
+        let v=D[i+c]*255/b;D[i+c]=LUT[v>511?511:v|0];}}}
+}
+
+/* 指の除去：ページの縁に触れている肌色の領域を白で塗る */
+function skinMask(img){
+  const W=img.width,H=img.height,D=img.data,f=4,sw=Math.ceil(W/f),sh=Math.ceil(H/f),N=sw*sh;
+  let m=new Uint8Array(N),chroma=0;
+  for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){const i=(Math.min(H-1,y*f+2)*W+Math.min(W-1,x*f+2))*4,r=D[i],g=D[i+1],b=D[i+2];
+    const Y=.299*r+.587*g+.114*b,cb=128-.1687*r-.3313*g+.5*b,cr=128+.5*r-.4187*g-.0813*b;chroma+=Math.abs(cb-128)+Math.abs(cr-128);
+    m[y*sw+x]=(Y>45&&Y<245&&cb>=77&&cb<=127&&cr>=138&&cr<=178&&r>g+10&&r>b+15)?1:0;}
+  const morph=(a,dil)=>{const o=new Uint8Array(N);for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){let v=dil?0:1;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const yy=y+dy,xx=x+dx;const q=(yy<0||xx<0||yy>=sh||xx>=sw)?(dil?0:1):a[yy*sw+xx];if(dil&&q){v=1;}if(!dil&&!q){v=0;}}o[y*sw+x]=v;}return o;};
+  m=morph(morph(m,true),false);
+  const lab=new Int32Array(N),keep=new Uint8Array(N);let any=false,id=0;
+  for(let s=0;s<N;s++){if(!m[s]||lab[s])continue;id++;const st=[s],cells=[];lab[s]=id;let border=false;
+    while(st.length){const c=st.pop();cells.push(c);const x=c%sw,y=(c/sw)|0;if(x===0||y===0||x===sw-1||y===sh-1)border=true;
+      for(const nb of [c-1,c+1,c-sw,c+sw]){if(nb<0||nb>=N)continue;if((nb===c-1&&x===0)||(nb===c+1&&x===sw-1))continue;if(m[nb]&&!lab[nb]){lab[nb]=id;st.push(nb);}}}
+    if(border&&cells.length>=0.002*N&&cells.length<=0.25*N){any=true;for(const c of cells)keep[c]=1;}}
+  if(!any)return null;
+  let k=keep;for(let i=0;i<3;i++)k=morph(k,true);
+  return{m:k,sw,sh,f};
+}
+function applyMask(img,mk){const W=img.width,H=img.height,D=img.data;
+  for(let y=0;y<H;y++){const row=((y/mk.f)|0)*mk.sw;for(let x=0;x<W;x++){if(mk.m[row+((x/mk.f)|0)]){const i=(y*W+x)*4;D[i]=D[i+1]=D[i+2]=255;}}}}
+
+function signature(c){const s=canvas(24,32),x=s.getContext("2d");x.drawImage(c,0,0,24,32);const d=x.getImageData(0,0,24,32).data,a=[];let m=0;
+  for(let i=0;i<d.length;i+=4){const v=d[i]*.3+d[i+1]*.59+d[i+2]*.11;a.push(v);m+=v;}m/=a.length;let sd=0;for(const v of a)sd+=(v-m)*(v-m);sd=Math.sqrt(sd/a.length)||1;
+  return a.map(v=>Math.round((v-m)/sd*100)/100);}
+function corr(a,b){if(!a||!b)return 0;let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s/a.length;}
+function sharpness(c){const w=300,h=Math.round(c.height*w/c.width),s=canvas(w,h),x=s.getContext("2d");x.drawImage(c,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
+  const g=new Float32Array(w*h);for(let i=0;i<w*h;i++)g[i]=d[i*4+1];let s1=0,s2=0,n=0;
+  for(let y=1;y<h-1;y++)for(let X=1;X<w-1;X++){const i=y*w+X;const l=4*g[i]-g[i-1]-g[i+1]-g[i-w]-g[i+w];s1+=l;s2+=l*l;n++;}return n?s2/n-(s1/n)*(s1/n):0;}
+
+/* ---------- page processing ---------- */
+async function srcCanvas(buf,rot){
+  const bmp=await createImageBitmap(blobJ(buf));let w=bmp.width,h=bmp.height;const sc=Math.min(1,SRC_MAX/Math.max(w,h));w=Math.round(w*sc);h=Math.round(h*sc);
+  const r=((rot||0)%360+360)%360,c=r%180?canvas(h,w):canvas(w,h),x=c.getContext("2d",{willReadFrequently:true});
+  x.translate(c.width/2,c.height/2);x.rotate(r*Math.PI/180);x.drawImage(bmp,-w/2,-h/2,w,h);bmp.close&&bmp.close();return c;}
+function drawStrokes(x,strokes,w,h){x.save();x.strokeStyle="#fff";x.lineCap="round";x.lineJoin="round";
+  for(const s of strokes||[]){x.lineWidth=s.w*w;x.beginPath();s.p.forEach((q,i)=>i?x.lineTo(q[0]*w,q[1]*h):x.moveTo(q[0]*w,q[1]*h));if(s.p.length===1)x.lineTo(s.p[0][0]*w+.1,s.p[0][1]*h);x.stroke();}x.restore();}
+async function processPage(p){
+  p.busy=true;
+  try{
+    const o=p.opt,c=await srcCanvas(p.src,o.rot);
+    let img=c.getContext("2d",{willReadFrequently:true}).getImageData(0,0,c.width,c.height);
+    if(o.dewarp){const d=dewarp(img);if(d)img=d;}
+    const mk=o.finger?skinMask(img):null;
+    if(o.shadow)flatten(img);
+    if(mk)applyMask(img,mk);
+    const c2=canvas(img.width,img.height);c2.getContext("2d").putImageData(img,0,0);
+    const sc=Math.min(1,OUT_MAX/Math.max(c2.width,c2.height)),c3=canvas(Math.round(c2.width*sc),Math.round(c2.height*sc)),x3=c3.getContext("2d");
+    x3.imageSmoothingQuality="high";x3.drawImage(c2,0,0,c3.width,c3.height);drawStrokes(x3,o.strokes,c3.width,c3.height);
+    p.out=await encode(c3,0.8);p.ow=c3.width;p.oh=c3.height;p.sig=signature(c3);p.sharp=sharpness(c3);
+    dropUrl(p.id);await savePage(p);
+  }finally{p.busy=false;}
+}
+
+/* ---------- OCR ---------- */
+let ocrW=null,ocrFail=false;
+async function getOCR(){
+  if(ocrW||ocrFail)return ocrW;
+  try{await loadScript(TESS);ocrW=await Tesseract.createWorker("eng",1,{logger:()=>{}});
+    await ocrW.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"11"});}
+  catch(e){console.error(e);ocrFail=true;ocrW=null;toast("ページ番号の読み取り機能を読み込めませんでした。番号は手入力で修正できます");}
+  return ocrW;}
+async function ocrPage(p){
+  const w=await getOCR();if(!w){p.ocrDone=true;p.cands=[];return;}
+  const bmp=await createImageBitmap(blobJ(p.out)),W=1400,sc=W/bmp.width,sh=Math.round(bmp.height*sc*0.09);
+  const c=canvas(W,sh*2+30),x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);
+  x.drawImage(bmp,0,0,bmp.width,bmp.height*0.09,0,0,W,sh);x.drawImage(bmp,0,bmp.height*0.91,bmp.width,bmp.height*0.09,0,sh+30,W,sh);
+  const r=await w.recognize(c),cands=[];
+  for(const wd of (r.data&&r.data.words)||[]){const t=(wd.text||"").replace(/\D/g,"");if(t.length>=1&&t.length<=4&&wd.confidence>=55){const v=parseInt(t,10);if(v>=1&&v<=1999&&!cands.includes(v))cands.push(v);}}
+  p.cands=cands;p.ocrDone=true;await savePage(p);
+}
+
+/* ---------- page numbers & checks ---------- */
+function inferNumbers(ps){
+  const n=ps.length,cs=ps.map(p=>p.numSrc==="user"?[p.num]:(p.cands||[])),as=new Array(n).fill(null),src=new Array(n).fill(null);
+  for(let i=0;i<n;i++){
+    if(ps[i].numSrc==="user"){as[i]=ps[i].num;src[i]="user";continue;}
+    let best=null,bs=0;
+    for(const c of cs[i]){let s=0;for(let j=Math.max(0,i-4);j<=Math.min(n-1,i+4);j++){if(j===i)continue;const d=j-i;
+        if(cs[j].includes(c+d))s+=2;else if(cs[j].some(x=>d>0?(x>c&&x<=c+d+3):(x<c&&x>=c+d-3)))s+=1;}
+      if(s>bs){bs=s;best=c;}}
+    if(bs>=2||(bs>=1&&cs[i].length===1)){as[i]=best;src[i]="ocr";}
+  }
+  let last=-1;for(let i=0;i<n;i++){if(as[i]==null)continue;if(last>=0&&as[i]<as[last]){if(src[i]!=="user"){as[i]=null;src[i]=null;continue;}else if(src[last]!=="user"){as[last]=null;src[last]=null;}}last=i;}
+  const known=[];for(let i=0;i<n;i++)if(as[i]!=null)known.push(i);
+  if(known.length){
+    for(let i=known[0]-1;i>=0;i--){const v=as[i+1]-1;if(v>=1){as[i]=v;src[i]="est";}}
+    for(let k=0;k<known.length-1;k++){const a=known[k],b=known[k+1];for(let i=a+1;i<b;i++){as[i]=as[i-1]+1;src[i]="est";}}
+    for(let i=known[known.length-1]+1;i<n;i++){as[i]=as[i-1]+1;src[i]="est";}
+  }
+  ps.forEach((p,i)=>{if(p.numSrc!=="user"){p.num=as[i];p.numSrc=src[i];}});
+}
+let DUPS=[],MISS=[];
+function runChecks(){
+  const ps=P.pages.filter(p=>p.out);
+  inferNumbers(ps);
+  DUPS=[];MISS=[];const used=new Set();
+  for(let i=1;i<ps.length;i++)for(const j of [i-1,i-2]){if(j<0)continue;const a=ps[j],b=ps[i];if(used.has(a.id)||used.has(b.id))continue;
+    if(P.keep.includes(a.id+"|"+b.id))continue;
+    const sure=x=>x.num!=null&&(x.numSrc==="ocr"||x.numSrc==="user");
+    const same=sure(a)&&sure(b)&&a.num===b.num,differ=sure(a)&&sure(b)&&a.num!==b.num,c=corr(a.sig,b.sig);
+    if(same||(!differ&&c>0.93)){DUPS.push({a,b,del:(a.sharp||0)<(b.sharp||0)?a.id:b.id});used.add(a.id);used.add(b.id);}}
+  for(let i=1;i<ps.length;i++){const a=ps[i-1].num,b=ps[i].num;if(a!=null&&b!=null&&b-a>1&&b-a<40)for(let m=a+1;m<b;m++)if(!P.ignored.includes(m))MISS.push(m);}
+  renderChecks();renderGrid();
+}
+
+/* ---------- import ---------- */
+function gutterSplit(c){
+  const w=400,h=Math.round(c.height*w/c.width),s=canvas(w,h),x=s.getContext("2d");x.drawImage(c,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
+  const col=new Float32Array(w);for(let X=0;X<w;X++){let t=0;for(let y=0;y<h;y+=2){const i=(y*w+X)*4;t+=d[i]+d[i+1]+d[i+2];}col[X]=t;}
+  let best=w/2,bv=Infinity;for(let X=Math.round(w*.35);X<=Math.round(w*.65);X++){let s2=0;for(let k=-3;k<=3;k++)s2+=col[Math.min(w-1,Math.max(0,X+k))];if(s2<bv){bv=s2;best=X;}}
+  return best/w;}
+async function addSource(bmpOrCanvas,key,extra){
+  let w=bmpOrCanvas.width,h=bmpOrCanvas.height;const sc=Math.min(1,SRC_MAX/Math.max(w,h));
+  const dw=Math.round(w*sc),dh=Math.round(h*sc),rot=extra?0:(P.settings.rot||0);
+  const c=rot%180?canvas(dh,dw):canvas(dw,dh),cx=c.getContext("2d");cx.translate(c.width/2,c.height/2);cx.rotate(rot*Math.PI/180);cx.drawImage(bmpOrCanvas,-dw/2,-dh/2,dw,dh);
+  let parts=[c];
+  if(P.settings.split&&!extra&&c.width/c.height>1.2){const g=gutterSplit(c),cut=Math.round(c.width*g);
+    const L=canvas(cut,c.height),R=canvas(c.width-cut,c.height);L.getContext("2d").drawImage(c,0,0);R.getContext("2d").drawImage(c,-cut,0);parts=[L,R];}
+  const maxPos=P.pages.reduce((m,p)=>Math.max(m,p.pos),0);const made=[];
+  for(let k=0;k<parts.length;k++){
+    const p={id:uid(),pos:extra&&extra.pos!=null?extra.pos+k*0.001:maxPos+1+k,src:await encode(parts[k],0.88),opt:{rot:0,dewarp:true,shadow:true,finger:true,strokes:[]},
+      num:extra?extra.num:null,numSrc:extra?"user":null,cands:extra?[extra.num]:[],ocrDone:!!extra,out:null,srcKey:key};
+    await savePage(p);P.pages.push(p);made.push(p);}
+  if(key&&!P.seen.includes(key)){P.seen.push(key);await saveMeta();}
+  sortPages();return made;
+}
+function sortPages(){P.pages.sort((a,b)=>a.pos-b.pos);}
+async function importPDF(file){
+  setBar(0,"PDFを読み込み中…");
+  await loadScript(PDFJS);pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_W;
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  let added=0;
+  for(let i=1;i<=pdf.numPages;i++){
+    const key="pdf:"+file.name+":"+file.size+":"+i;if(P.seen.includes(key))continue;
+    const pg=await pdf.getPage(i),v1=pg.getViewport({scale:1}),v=pg.getViewport({scale:2100/Math.max(v1.width,v1.height)});
+    const c=canvas(Math.round(v.width),Math.round(v.height));await pg.render({canvasContext:c.getContext("2d"),viewport:v}).promise;
+    await addSource(c,key);added++;setBar(i/pdf.numPages,"PDFを読み込み中… "+i+"/"+pdf.numPages);renderStats();
+  }
+  setBar(null,added?added+"ページ読み込みました":"このPDFはすでに読み込み済みです");
+}
+async function importImages(files){
+  const list=[...files];let i=0;
+  for(const f of list){i++;const key="img:"+f.name+":"+f.size+":"+f.lastModified;if(P.seen.includes(key))continue;
+    const bmp=await createImageBitmap(f);await addSource(bmp,key);bmp.close&&bmp.close();setBar(i/list.length,"画像を読み込み中… "+i+"/"+list.length);renderStats();}
+  setBar(null,list.length+"枚読み込みました");
+}
+function openScannerDB(){return new Promise(res=>{let r;try{r=indexedDB.open("tb-scanner");}catch(e){res(null);return;}
+  r.onupgradeneeded=()=>{r.transaction.abort();};r.onsuccess=()=>res(r.result);r.onerror=()=>res(null);});}
+async function scannerReq(db,store,fn){return new Promise((res,rej)=>{const t=db.transaction(store,"readonly");const q=fn(t.objectStore(store));q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+async function initScanner(){
+  const db=await openScannerDB();if(!db||!db.objectStoreNames.contains("books")){return;}
+  const books=await scannerReq(db,"books",s=>s.getAll());if(!books.length)return;
+  const sel=$("scanSel");sel.textContent="";books.sort((a,b)=>a.created-b.created).forEach(b=>{const o=document.createElement("option");o.value=b.id;o.textContent=b.title;sel.appendChild(o);});
+  $("scanRow").style.display="flex";
+  $("scanBtn").onclick=()=>guard(async()=>{
+    const id=sel.value,pages=(await scannerReq(db,"pages",s=>s.index("book").getAll(id))).sort((a,b)=>a.order-b.order);
+    const book=books.find(b=>b.id===id);if(!P.settings.title){P.settings.title=book.title;$("titleIn").value=book.title;await saveMeta();}
+    let i=0,added=0;
+    for(const pg of pages){i++;const key="scan:"+pg.id;if(P.seen.includes(key))continue;const bmp=await createImageBitmap(blobJ(pg.data));await addSource(bmp,key);bmp.close&&bmp.close();added++;
+      setBar(i/pages.length,"スキャナーから読み込み中… "+i+"/"+pages.length);renderStats();}
+    setBar(null,added?added+"ページ読み込みました":"この本はすでに読み込み済みです");
+  });
+}
+
+/* ---------- pipeline runner ---------- */
+let running=false,again=false;
+async function runPipeline(){
+  if(running){again=true;return;}running=true;
+  try{do{again=false;
+    let todo=P.pages.filter(p=>!p.out&&!p.busy);let k=0;
+    for(const p of todo){k++;setBar(k/todo.length,"補正中… "+k+"/"+todo.length+"（影・指・歪み）");await processPage(p);if(k%3===0)renderGrid();await sleep(0);}
+    todo=P.pages.filter(p=>p.out&&!p.ocrDone);k=0;
+    for(const p of todo){k++;setBar(k/todo.length,"ページ番号を読み取り中… "+k+"/"+todo.length);await ocrPage(p);}
+    setBar(null,"");runChecks();renderStats();
+  }while(again);}
+  catch(e){console.error(e);setBar(null,"処理中に問題が起きました："+(e.message||e)+"。もう一度チェックを押すと続きから再開します");}
+  finally{running=false;}
+}
+async function guard(fn){try{await fn();}catch(e){console.error(e);setBar(null,"読み込めませんでした："+(e.message||e));}renderGrid();renderStats();runPipeline();}
+
+/* ---------- render ---------- */
+function renderStats(){const n=P.pages.length,d=P.pages.filter(p=>p.out).length;
+  $("stats").textContent=n?(n+"ページ　"+(d<n?"補正済み "+d+"/"+n:"すべて補正済み")+"　この端末に保存済み"):"まだページがありません";}
+function label(p){if(p.num==null)return{t:"?",c:"unk"};return{t:"p."+p.num+(p.numSrc==="est"?"?":""),c:p.numSrc==="est"?"est":""};}
+function renderGrid(){
+  const g=$("grid");g.textContent="";
+  P.pages.forEach((p,i)=>{const b=document.createElement("button");b.className="thumb";b.setAttribute("aria-label",(i+1)+"枚目を編集");
+    const u=urlOf(p);if(u){const im=document.createElement("img");im.src=u;im.alt="";im.loading="lazy";b.appendChild(im);}else{const w=document.createElement("div");w.className="wait";w.textContent="補正待ち";b.appendChild(w);}
+    const l=label(p),s=document.createElement("span");s.textContent=l.t;if(l.c)s.className=l.c;b.appendChild(s);b.onclick=()=>openEd(i);g.appendChild(b);});
+}
+function renderChecks(){
+  const box=$("checks");box.textContent="";
+  if(!P.pages.length){box.innerHTML='<p class="hint">ページを読み込むと、ページ番号を読み取ってチェックします。</p>';return;}
+  const unk=P.pages.filter(p=>p.out&&p.num==null).length;
+  if(!DUPS.length&&!MISS.length){const p=document.createElement("p");p.className="ok-msg";p.textContent=unk?"被り・抜けは見つかりませんでした（番号を読み取れないページが"+unk+"枚あります）":"被り・抜けは見つかりませんでした";box.appendChild(p);}
+  if(DUPS.length){
+    const h=document.createElement("p");h.className="hint";h.style.marginTop="0";h.textContent="同じページが2回取り込まれている可能性があります。赤い方が削除されます。タップで残す方を切り替えられます。";box.appendChild(h);
+    DUPS.forEach(d=>{const card=document.createElement("div");card.className="issue";const t=document.createElement("h3");
+      t.textContent="被りの可能性"+(d.a.num!=null?"（p."+d.a.num+(d.b.num!==d.a.num&&d.b.num!=null?" と p."+d.b.num:"")+"）":"");card.appendChild(t);
+      const pr=document.createElement("div");pr.className="pair";
+      [d.a,d.b].forEach(p=>{const bt=document.createElement("button");bt.className="pick"+(d.del===p.id?" del":"");const im=document.createElement("img");im.src=urlOf(p);im.alt="";
+        const tag=document.createElement("b");tag.textContent=d.del===p.id?"削除":"残す";const sm=document.createElement("small");sm.textContent=P.pages.indexOf(p)+1+"枚目";
+        bt.append(im,tag,sm);bt.onclick=()=>{d.del=d.del===d.a.id?d.b.id:d.a.id;renderChecks();};pr.appendChild(bt);});
+      card.appendChild(pr);const row=document.createElement("div");row.className="row";row.style.marginTop="10px";
+      const del=document.createElement("button");del.className="btn danger";del.textContent="赤い方を削除";del.onclick=()=>removePages([d.del]);
+      const kp=document.createElement("button");kp.className="btn";kp.textContent="両方残す";kp.onclick=async()=>{P.keep.push(d.a.id+"|"+d.b.id);await saveMeta();runChecks();};
+      row.append(del,kp);card.appendChild(row);box.appendChild(card);});
+    if(DUPS.length>1){const all=document.createElement("button");all.className="btn danger";all.style.width="100%";all.style.marginBottom="14px";all.textContent="赤いページを"+DUPS.length+"枚まとめて削除";
+      all.onclick=()=>{if(confirm(DUPS.length+"枚を削除します。よろしいですか？"))removePages(DUPS.map(d=>d.del));};box.appendChild(all);}
+  }
+  MISS.forEach(m=>{const card=document.createElement("div");card.className="issue missing";const t=document.createElement("h3");t.textContent="p."+m+" が見つかりません";card.appendChild(t);
+    const row=document.createElement("div");row.className="row";
+    const a=document.createElement("button");a.className="btn primary";a.textContent="撮影して追加";a.onclick=()=>{pendingNum=m;$("addCam").click();};
+    const b=document.createElement("button");b.className="btn";b.textContent="画像を選ぶ";b.onclick=()=>{pendingNum=m;$("addPick").click();};
+    const c=document.createElement("button");c.className="btn";c.textContent="抜けではない";c.onclick=async()=>{P.ignored.push(m);await saveMeta();runChecks();};
+    row.append(a,b,c);card.appendChild(row);box.appendChild(card);});
+}
+async function removePages(ids){
+  for(const id of ids){await delPage(id);dropUrl(id);}
+  P.pages=P.pages.filter(p=>!ids.includes(p.id));toast(ids.length+"ページ削除しました");runChecks();renderStats();
+}
+let pendingNum=null;
+async function addMissing(file){
+  const m=pendingNum;pendingNum=null;if(m==null||!file)return;
+  const ps=P.pages;let before=null,after=null;
+  for(const p of ps){if(p.num!=null&&p.num<m)before=p;if(p.num!=null&&p.num>m&&!after)after=p;}
+  const pos=before&&after?(before.pos+after.pos)/2:before?before.pos+0.5:after?after.pos-0.5:0;
+  const bmp=await createImageBitmap(file);const [p]=await addSource(bmp,null,{num:m,pos});bmp.close&&bmp.close();
+  sortPages();setBar(0,"追加したページを補正中…");await processPage(p);setBar(null,"p."+m+" を追加しました");toast("p."+m+" を該当の位置に追加しました");runChecks();renderStats();
+}
+
+/* ---------- editor ---------- */
+let ei=0,edImg=null,edOrig=null,erasing=false,showOrig=false,rect=null,curStroke=null;
+const cv=$("edCv");
+function openEd(i){ei=i;$("ed").classList.add("open");loadEd();}
+async function loadEd(){
+  const p=P.pages[ei];if(!p){closeEd();return;}
+  const l=label(p);$("edLabel").textContent=(ei+1)+" / "+P.pages.length+"枚目　"+(l.t==="?"?"番号なし":l.t);
+  $("tNum").value=p.num!=null?p.num:"";
+  ["tDew","tSha","tFin"].forEach((id,k)=>$(id).setAttribute("aria-pressed",String(p.opt[["dewarp","shadow","finger"][k]])));
+  $("tErase").setAttribute("aria-pressed",String(erasing));
+  edImg=null;edOrig=null;
+  if(!p.out){$("edBusy").style.display="block";await processPage(p);$("edBusy").style.display="none";}
+  edImg=await createImageBitmap(blobJ(p.out));drawEd();
+}
+function drawEd(){
+  const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);
+  const x=cv.getContext("2d");x.clearRect(0,0,cv.width,cv.height);const im=showOrig&&edOrig?edOrig:edImg;if(!im)return;
+  const pad=8*dpr,s=Math.min((cv.width-2*pad)/im.width,(cv.height-2*pad)/im.height),w=im.width*s,h=im.height*s;
+  rect={x:(cv.width-w)/2,y:(cv.height-h)/2,w,h,dpr};x.fillStyle="#fff";x.fillRect(rect.x,rect.y,w,h);x.drawImage(im,rect.x,rect.y,w,h);
+}
+function closeEd(){$("ed").classList.remove("open");renderGrid();renderChecks();}
+async function reprocessEd(){const p=P.pages[ei];$("edBusy").style.display="block";await processPage(p);$("edBusy").style.display="none";await loadEd();}
+function toggleOpt(k){const p=P.pages[ei];p.opt[k]=!p.opt[k];reprocessEd();}
+$("tDew").onclick=()=>toggleOpt("dewarp");$("tSha").onclick=()=>toggleOpt("shadow");$("tFin").onclick=()=>toggleOpt("finger");
+$("tRot").onclick=()=>{const p=P.pages[ei];if(p.opt.strokes.length&&!confirm("回転すると消しゴムの跡がリセットされます。よろしいですか？"))return;p.opt.rot=(p.opt.rot+90)%360;p.opt.strokes=[];reprocessEd();};
+async function holdOrig(on){showOrig=on;if(on&&!edOrig){const p=P.pages[ei];edOrig=await srcCanvas(p.src,p.opt.rot);}drawEd();}
+$("tOrig").addEventListener("pointerdown",()=>holdOrig(true));["pointerup","pointerleave","pointercancel"].forEach(e=>$("tOrig").addEventListener(e,()=>{if(showOrig)holdOrig(false);}));
+$("tErase").onclick=()=>{erasing=!erasing;$("tErase").setAttribute("aria-pressed",String(erasing));if(erasing)toast("消したい所を指でなぞってください");};
+$("tUndo").onclick=()=>{const p=P.pages[ei];if(!p.opt.strokes.length){toast("戻す操作がありません");return;}p.opt.strokes.pop();reprocessEd();};
+function ptOf(e){const r=cv.getBoundingClientRect(),d=rect.dpr,x=((e.clientX-r.left)*d-rect.x)/rect.w,y=((e.clientY-r.top)*d-rect.y)/rect.h;return[Math.max(0,Math.min(1,x)),Math.max(0,Math.min(1,y))];}
+cv.addEventListener("pointerdown",e=>{if(!erasing||!rect||showOrig)return;cv.setPointerCapture(e.pointerId);curStroke={w:Number($("tSize").value)*0.006,p:[ptOf(e)]};paintLive();});
+cv.addEventListener("pointermove",e=>{if(!curStroke)return;curStroke.p.push(ptOf(e));paintLive();});
+const endStroke=()=>{if(!curStroke)return;const p=P.pages[ei];p.opt.strokes.push(curStroke);curStroke=null;reprocessEd();};
+cv.addEventListener("pointerup",endStroke);cv.addEventListener("pointercancel",endStroke);
+function paintLive(){const x=cv.getContext("2d");x.save();x.translate(rect.x,rect.y);drawStrokes(x,[curStroke],rect.w,rect.h);x.restore();}
+$("tNum").onchange=async()=>{const p=P.pages[ei],v=parseInt($("tNum").value,10);if(v>=1){p.num=v;p.numSrc="user";}else{p.numSrc=null;p.num=null;}await savePage(p);runChecks();loadEd();};
+async function swap(d){const j=ei+d;if(j<0||j>=P.pages.length)return;const a=P.pages[ei],b=P.pages[j];[a.pos,b.pos]=[b.pos,a.pos];await savePage(a);await savePage(b);sortPages();ei=j;runChecks();loadEd();}
+$("tUp").onclick=()=>swap(-1);$("tDown").onclick=()=>swap(1);
+$("tDel").onclick=async()=>{if(!confirm("このページを削除しますか？"))return;const id=P.pages[ei].id;await removePages([id]);if(!P.pages.length){closeEd();return;}ei=Math.min(ei,P.pages.length-1);loadEd();};
+$("tPrev").onclick=()=>{if(ei>0){ei--;loadEd();}};$("tNext").onclick=()=>{if(ei<P.pages.length-1){ei++;loadEd();}};
+$("edClose").onclick=closeEd;window.addEventListener("resize",()=>{if($("ed").classList.contains("open"))drawEd();});
+
+/* ---------- export ---------- */
+let dlCap;
+async function getDownloads(){if(dlCap!==undefined)return dlCap;try{dlCap=(window.claude&&window.claude.use)?await window.claude.use("downloads"):null;}catch(e){dlCap=null;}return dlCap;}
+async function saveFile(name,blob){const dl=await getDownloads();if(dl){await dl.save({filename:name,data:blob});return;}
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);}
+async function grayJpeg(buf){const bmp=await createImageBitmap(blobJ(buf)),c=canvas(bmp.width,bmp.height),x=c.getContext("2d",{willReadFrequently:true});x.drawImage(bmp,0,0);
+  const d=x.getImageData(0,0,c.width,c.height),D=d.data;for(let i=0;i<D.length;i+=4){const v=(D[i]*77+D[i+1]*150+D[i+2]*29)>>8;D[i]=D[i+1]=D[i+2]=v;}x.putImageData(d,0,0);return encode(c,0.75);}
+async function exportPDF(){
+  if(!P.pages.length){toast("ページがありません");return;}
+  if(running){toast("補正が終わるまでお待ちください");return;}
+  if(!window.jspdf){toast("PDFの準備ができていません。通信を確認してください");return;}
+  if((DUPS.length||MISS.length)&&!confirm("被り・抜けのチェックで未対応の項目があります。このまま作成しますか？"))return;
+  const btn=$("exportBtn");btn.disabled=true;
+  try{
+    for(const p of P.pages)if(!p.out)await processPage(p);
+    const {jsPDF}=window.jspdf,per=P.settings.perFile,ps=P.pages,parts=Math.ceil(ps.length/per),base=(P.settings.title||"教科書").replace(/[\\/:*?"<>|]/g,"_");
+    for(let k=0;k<parts;k++){const from=k*per,to=Math.min(ps.length,from+per);let doc=null;
+      for(let i=from;i<to;i++){const p=ps[i];$("exProg").textContent="PDFを作成中… "+(i+1)+"/"+ps.length;
+        const buf=P.settings.color==="gray"?await grayJpeg(p.out):p.out,W=595,H=Math.round(595*p.oh/p.ow),o=W>H?"l":"p";
+        if(!doc)doc=new jsPDF({unit:"pt",format:[W,H],orientation:o,compress:true});else doc.addPage([W,H],o);
+        doc.addImage(new Uint8Array(buf),"JPEG",0,0,W,H,undefined,"NONE");if(i%5===0)await sleep(0);}
+      const blob=doc.output("blob");
+      const nm=parts>1?(ps[from].num!=null&&ps[to-1].num!=null?base+"_p"+ps[from].num+"-"+ps[to-1].num:base+"_"+(k+1))+".pdf":base+".pdf";
+      $("exProg").textContent=nm+"（"+(blob.size/1048576).toFixed(1)+"MB）を保存します";
+      try{await saveFile(nm,blob);}catch(e){if(e&&e.code==="declined"){$("exProg").textContent="保存をキャンセルしました";return;}throw e;}
+      if(parts>1)await sleep(800);}
+    $("exProg").textContent=parts>1?parts+"つのPDFを作成しました":"PDFを作成しました";
+  }catch(e){console.error(e);$("exProg").textContent="作成できませんでした："+(e.message||e.code||e);}
+  finally{btn.disabled=false;}
+}
+
+/* ---------- settings & events ---------- */
+function setSeg(id,v){document.querySelectorAll("#"+id+" button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===String(v))));}
+function renderSettings(){setSeg("segR",P.settings.rot||0);setSeg("segC",P.settings.color);setSeg("segP",P.settings.perFile);$("splitChk").checked=P.settings.split;$("titleIn").value=P.settings.title||"";}
+document.querySelectorAll("#segC button").forEach(b=>b.onclick=async()=>{P.settings.color=b.dataset.v;await saveMeta();renderSettings();});
+document.querySelectorAll("#segP button").forEach(b=>b.onclick=async()=>{P.settings.perFile=Number(b.dataset.v);await saveMeta();renderSettings();});
+document.querySelectorAll("#segR button").forEach(b=>b.onclick=async()=>{P.settings.rot=Number(b.dataset.v);await saveMeta();renderSettings();});
+async function rotateAll(d){if(!P.pages.length)return;if(running){toast("補正が終わるまでお待ちください");return;}
+  if(!confirm("全"+P.pages.length+"ページを"+(d===90?"右":"左")+"に回します。補正とページ番号の読み取りをやり直します。"))return;
+  for(const p of P.pages){p.opt.rot=(p.opt.rot+d+360)%360;p.opt.strokes=[];p.out=null;p.ocrDone=false;p.cands=[];if(p.numSrc!=="user"){p.num=null;p.numSrc=null;}dropUrl(p.id);await savePage(p);}
+  renderGrid();runPipeline();}
+$("rotAllR").onclick=()=>rotateAll(90);$("rotAllL").onclick=()=>rotateAll(-90);
+$("splitChk").onchange=async e=>{P.settings.split=e.target.checked;await saveMeta();};
+$("titleIn").onchange=async e=>{P.settings.title=e.target.value.trim();await saveMeta();};
+$("pdfBtn").onclick=()=>$("pdfIn").click();$("imgBtn").onclick=()=>$("imgIn").click();
+$("pdfIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(f){if(!P.settings.title){P.settings.title=f.name.replace(/\.pdf$/i,"").replace(/_p\d+-\d+$/,"");renderSettings();saveMeta();}guard(()=>importPDF(f));}};
+$("imgIn").onchange=e=>{const fs=[...e.target.files];e.target.value="";if(fs.length)guard(()=>importImages(fs));};
+$("addCam").onchange=e=>{const f=e.target.files[0];e.target.value="";guard(()=>addMissing(f));};
+$("addPick").onchange=e=>{const f=e.target.files[0];e.target.value="";guard(()=>addMissing(f));};
+$("recheckBtn").onclick=()=>{P.ignored=[];P.keep=[];saveMeta();runPipeline();};
+$("exportBtn").onclick=exportPDF;
+$("resetBtn").onclick=async()=>{if(!confirm("仕上げ中のページをすべて消します。元に戻せません。よろしいですか？"))return;
+  await idb("pages","readwrite",s=>s.clear());urls.forEach(u=>URL.revokeObjectURL(u));urls.clear();P.pages=[];P.ignored=[];P.keep=[];P.seen=[];await saveMeta();DUPS=[];MISS=[];renderChecks();renderGrid();renderStats();toast("消しました");};
+
+(async function init(){
+  try{
+    const st=await getMeta("state");if(st){Object.assign(P.settings,st.settings||{});P.ignored=st.ignored||[];P.keep=st.keep||[];P.seen=st.seen||[];}
+    P.pages=(await idb("pages","readonly",s=>s.getAll()))||[];sortPages();
+    renderSettings();renderStats();renderGrid();initScanner();
+    if(P.pages.length){if(P.pages.some(p=>!p.out||!p.ocrDone))toast("前回の続きから処理します");runPipeline();}
+  }catch(e){console.error(e);$("stats").textContent="この端末に保存できません（シークレットモードの可能性があります）";}
+})();
+})();
+</script>
+</body>
+</html>

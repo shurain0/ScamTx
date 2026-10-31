@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>教科書スキャナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --paper:#F6F7F9; --surface:#FFFFFF; --ink:#1D2433; --muted:#5B6475; --line:#DCE0E7;
+  --marker:#FFE14D; --marker-ink:#3A3000; --danger:#B83A26; --ok:#2E7D4F;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#13161C; --surface:#1B1F27; --ink:#E7EAF0; --muted:#9AA3B2; --line:#2B313B;
+    --marker:#F2D33C; --marker-ink:#2A2300; --danger:#F07A63; --ok:#6CCB93;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#13161C; --surface:#1B1F27; --ink:#E7EAF0; --muted:#9AA3B2; --line:#2B313B;
+  --marker:#F2D33C; --marker-ink:#2A2300; --danger:#F07A63; --ok:#6CCB93;
+  color-scheme: dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+  font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
+.wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
+
+/* book header */
+.book{padding:8px 0 16px;border-bottom:1px solid var(--line)}
+.book-row{display:flex;gap:8px;align-items:center}
+.title-in{flex:1;min-width:0;font-size:1.6rem;font-weight:700;border:none;background:transparent;padding:4px 0;
+  border-bottom:2px solid transparent;line-height:1.3}
+.title-in:focus{outline:none;border-bottom-color:var(--marker)}
+.mark{background:linear-gradient(transparent 55%,var(--marker) 55%);padding:0 2px}
+.stats{color:var(--muted);font-size:.9rem;margin-top:4px}
+.books{display:flex;gap:8px;margin-top:10px;align-items:center}
+.books select{flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
+.ghost{background:transparent;border:1px solid var(--line);border-radius:8px;padding:8px 12px;white-space:nowrap}
+
+/* main actions */
+.actions{display:grid;grid-template-columns:1fr auto;gap:10px;margin:20px 0}
+.big{background:var(--marker);color:var(--marker-ink);border:none;border-radius:14px;padding:18px 16px;font-size:1.15rem;font-weight:700}
+.side{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:0 16px;font-weight:500}
+
+/* grid */
+h2{font-size:1rem;margin:28px 0 10px;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px}
+.thumb{position:relative;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:0;overflow:hidden;aspect-ratio:3/4}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb span{position:absolute;left:4px;bottom:4px;background:var(--surface);color:var(--ink);font-size:.75rem;padding:0 6px;border-radius:4px;border:1px solid var(--line)}
+.empty{color:var(--muted);border:1px dashed var(--line);border-radius:12px;padding:24px;text-align:center}
+
+/* settings */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.field{margin:10px 0}
+.field label.lb{display:block;font-weight:500;margin-bottom:6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:none;background:transparent;padding:10px 4px;font-size:.92rem}
+.seg button[aria-pressed="true"]{background:var(--marker);color:var(--marker-ink);font-weight:700}
+.hint{color:var(--muted);font-size:.85rem;margin:6px 0 0}
+.btn{display:block;width:100%;padding:14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700;margin-top:10px}
+.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:transparent;font-weight:500}
+.btn:disabled{opacity:.5}
+textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);padding:10px;font:inherit;font-size:.9rem}
+.progress{font-size:.9rem;color:var(--muted);margin-top:8px;min-height:1.4em}
+
+/* camera */
+.cam{position:fixed;inset:0;background:#000;color:#fff;display:none;flex-direction:column;z-index:20}
+.cam.open{display:flex}
+.cam-top{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;background:rgba(0,0,0,.55)}
+.cam-count{font-weight:700;font-size:1.05rem}
+.chip{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:99px;padding:6px 14px;font-size:.9rem}
+.chip[aria-pressed="true"]{background:#FFE14D;color:#2A2300;border-color:#FFE14D;font-weight:700}
+.done{background:#fff;color:#000;border:none;border-radius:99px;padding:6px 16px;font-weight:700}
+.stage{position:relative;flex:1;min-height:0;overflow:hidden}
+.stage video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.flash.on{opacity:.8;transition:none}
+.status{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(0,0,0,.65);padding:6px 14px;border-radius:99px;font-size:.92rem;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+.meter{position:absolute;left:0;top:0;height:4px;background:#FFE14D;width:0;transition:width .1s}
+.retake{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#FFE14D;color:#2A2300;padding:4px 12px;border-radius:6px;font-weight:700;display:none}
+.cam-bottom{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:16px 20px calc(env(safe-area-inset-bottom,0px) + 18px);background:rgba(0,0,0,.55)}
+.last{width:52px;height:68px;border-radius:6px;border:2px solid rgba(255,255,255,.6);background:#222 center/cover no-repeat}
+.shutter{width:76px;height:76px;border-radius:50%;border:5px solid #fff;background:#FFE14D;justify-self:center}
+.shutter:active{transform:scale(.94)}
+.cam-err{padding:24px;text-align:center;line-height:1.8}
+.cam-err .big{margin-top:12px}
+
+/* viewer */
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:30;display:none;flex-direction:column;color:#fff}
+.viewer.open{display:flex}
+.v-top{display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px}
+.v-img{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 8px}
+.v-img img{max-width:100%;max-height:100%;object-fit:contain;background:#fff}
+.v-bot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 14px)}
+.v-bot button{background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:10px;padding:12px 4px;font-size:.9rem}
+.v-bot .del{color:#FF9B88}
+
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;opacity:0;transition:.2s;z-index:40;pointer-events:none;max-width:90%}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="book">
+    <div class="book-row">
+      <input id="title" class="title-in" aria-label="本のタイトル" maxlength="60">
+    </div>
+    <div class="stats" id="stats">読み込み中…</div>
+    <div class="books">
+      <select id="bookSel" aria-label="本を切り替え"></select>
+      <button class="ghost" id="newBook">＋新しい本</button>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="big" id="openCam">撮影をはじめる</button>
+    <button class="side" id="pickBtn">写真から追加</button>
+    <input type="file" id="picker" accept="image/*" multiple hidden>
+  </div>
+
+  <h2>ページ</h2>
+  <div id="grid" class="grid"></div>
+
+  <h2>撮影の設定</h2>
+  <div class="panel">
+    <div class="field">
+      <label class="lb">画質</label>
+      <div class="seg" id="segQ">
+        <button data-v="light">軽量</button><button data-v="std">標準</button><button data-v="high">高画質</button>
+      </div>
+      <p class="hint" id="qHint"></p>
+    </div>
+    <div class="field">
+      <label class="lb">色</label>
+      <div class="seg" id="segC">
+        <button data-v="color">カラー</button><button data-v="gray">白黒</button>
+      </div>
+      <p class="hint">書き込みがある場合はカラーがおすすめです。赤ペンや蛍光ペンが本文と区別しやすくなります。白黒はさらに軽くなります。</p>
+    </div>
+  </div>
+
+  <h2>Claudeに渡す</h2>
+  <div class="panel">
+    <div class="field">
+      <label class="lb">1ファイルあたりのページ数</label>
+      <div class="seg" id="segP">
+        <button data-v="30">30</button><button data-v="50">50</button><button data-v="90">90</button>
+      </div>
+      <p class="hint">ページが多いときは自動で複数のPDFに分けます。Claudeは1回のやり取りで読めるページ数に上限があるため、章ごとに分けて渡すと整理の精度が上がります。</p>
+    </div>
+    <button class="btn primary" id="exportBtn">PDFで書き出す</button>
+    <div class="progress" id="progress"></div>
+    <div class="field" style="margin-top:18px">
+      <label class="lb">PDFと一緒に送る依頼文</label>
+      <textarea id="prompt" readonly></textarea>
+      <button class="btn" id="copyBtn">依頼文をコピー</button>
+    </div>
+  </div>
+
+  <h2>この本の管理</h2>
+  <button class="btn danger" id="delBook">この本のデータをすべて削除</button>
+  <p class="hint">撮影したページは1枚ごとにすぐこの端末に保存されます。アプリを閉じたり電話がかかってきても消えません。</p>
+</div>
+
+<!-- camera -->
+<div class="cam" id="cam" role="dialog" aria-label="撮影">
+  <div class="cam-top">
+    <span class="cam-count" id="camCount">0ページ</span>
+    <button class="chip" id="autoChip" aria-pressed="true">自動撮影</button>
+    <button class="done" id="camDone">完了</button>
+  </div>
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="meter" id="meter"></div>
+    <div class="flash" id="flash"></div>
+    <div class="retake" id="retakeBadge"></div>
+    <div class="status" id="camStatus">カメラを準備中…</div>
+  </div>
+  <div class="cam-bottom">
+    <div class="last" id="lastThumb"></div>
+    <button class="shutter" id="shutter" aria-label="撮影"></button>
+    <div></div>
+  </div>
+</div>
+
+<!-- viewer -->
+<div class="viewer" id="viewer" role="dialog" aria-label="ページ確認">
+  <div class="v-top">
+    <strong id="vLabel"></strong>
+    <button class="done" id="vClose">閉じる</button>
+  </div>
+  <div class="v-img"><img id="vImg" alt=""></div>
+  <div class="v-bot">
+    <button id="vPrev">前へ</button>
+    <button id="vRetake">撮り直す</button>
+    <button id="vDel" class="del">削除</button>
+    <button id="vNext">次へ</button>
+  </div>
+</div>
+<input type="file" id="retakePicker" accept="image/*" capture="environment" hidden>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const PRESETS={light:{side:1280,q:0.6,label:"1ページ約80〜150KB。文字が大きめの本向け"},
+               std:{side:1600,q:0.68,label:"1ページ約150〜300KB。ふつうの教科書ならこれで十分です"},
+               high:{side:2048,q:0.75,label:"1ページ約300〜500KB。細かい注釈や数式が多い本向け"}};
+const S={books:[],bookId:null,pages:[],urls:new Map(),
+  settings:{quality:"std",color:"color",auto:true,perFile:50}};
+
+/* ---------- IndexedDB ---------- */
+let dbp=null;
+function openDB(){
+  if(dbp) return dbp;
+  dbp=new Promise((res,rej)=>{
+    const r=indexedDB.open("tb-scanner",1);
+    r.onupgradeneeded=()=>{
+      const d=r.result;
+      if(!d.objectStoreNames.contains("books")) d.createObjectStore("books",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("pages")){const s=d.createObjectStore("pages",{keyPath:"id"});s.createIndex("book","book");}
+      if(!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+    };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+  return dbp;
+}
+async function idb(store,mode,op){
+  const d=await openDB();
+  return new Promise((res,rej)=>{
+    const t=d.transaction(store,mode);
+    const r=op(t.objectStore(store));
+    t.oncomplete=()=>res(r?r.result:undefined);
+    t.onerror=t.onabort=()=>rej(t.error||new Error("保存に失敗しました"));
+  });
+}
+const putMeta=(k,v)=>idb("meta","readwrite",s=>s.put(v,k));
+const getMeta=k=>idb("meta","readonly",s=>s.get(k));
+
+/* ---------- helpers ---------- */
+let toastT;
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),2200);}
+function mb(n){return (n/1048576).toFixed(n<10485760?1:0)+"MB";}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function curBook(){return S.books.find(b=>b.id===S.bookId);}
+function blobOf(p){return new Blob([p.data],{type:"image/jpeg"});}
+function urlOf(p){
+  if(!S.urls.has(p.id)) S.urls.set(p.id,URL.createObjectURL(blobOf(p)));
+  return S.urls.get(p.id);
+}
+function dropUrl(id){const u=S.urls.get(id);if(u){URL.revokeObjectURL(u);S.urls.delete(id);}}
+
+/* ---------- books ---------- */
+async function loadBooks(){
+  S.books=(await idb("books","readonly",s=>s.getAll()))||[];
+  S.books.sort((a,b)=>a.created-b.created);
+  if(!S.books.length){await createBook("教科書1");}
+}
+async function createBook(title){
+  const b={id:uid(),title,created:Date.now()};
+  await idb("books","readwrite",s=>s.put(b));
+  S.books.push(b);
+  return b;
+}
+async function selectBook(id){
+  S.bookId=id;
+  await putMeta("currentBook",id);
+  S.urls.forEach(u=>URL.revokeObjectURL(u));S.urls.clear();
+  S.pages=(await idb("pages","readonly",s=>s.index("book").getAll(id)))||[];
+  S.pages.sort((a,b)=>a.order-b.order);
+  renderAll();
+}
+
+/* ---------- render ---------- */
+function renderAll(){renderHeader();renderGrid();renderSettings();renderPrompt();}
+function renderHeader(){
+  const b=curBook();
+  if(document.activeElement!==$("title")) $("title").value=b?b.title:"";
+  const total=S.pages.reduce((a,p)=>a+p.size,0);
+  $("stats").textContent=S.pages.length+"ページ　"+mb(total)+"　この端末に保存済み";
+  const sel=$("bookSel");sel.textContent="";
+  S.books.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=x.title||"（無題）";if(x.id===S.bookId)o.selected=true;sel.appendChild(o);});
+  $("camCount").textContent=S.pages.length+"ページ";
+}
+function renderGrid(){
+  const g=$("grid");g.textContent="";
+  if(!S.pages.length){
+    const e=document.createElement("div");e.className="empty";e.style.gridColumn="1/-1";
+    e.textContent="まだページがありません。「撮影をはじめる」で1ページ目から撮っていきましょう。";
+    g.appendChild(e);return;
+  }
+  S.pages.forEach((p,i)=>{
+    const b=document.createElement("button");b.className="thumb";b.setAttribute("aria-label",(i+1)+"ページ目を開く");
+    const im=document.createElement("img");im.loading="lazy";im.alt="";im.src=urlOf(p);
+    const sp=document.createElement("span");sp.textContent=i+1;
+    b.append(im,sp);b.onclick=()=>openViewer(i);g.appendChild(b);
+  });
+}
+function setSeg(id,val){document.querySelectorAll("#"+id+" button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===String(val))));}
+function renderSettings(){
+  setSeg("segQ",S.settings.quality);setSeg("segC",S.settings.color);setSeg("segP",S.settings.perFile);
+  $("qHint").textContent=PRESETS[S.settings.quality].label+(S.settings.color==="gray"?"（白黒ならさらに3〜4割小さく）":"");
+  $("autoChip").setAttribute("aria-pressed",String(S.settings.auto));
+}
+function renderPrompt(){
+  const b=curBook();const t=b&&b.title?b.title:"この教科書";
+  $("prompt").value=
+"添付したPDFは『"+t+"』をスキャンしたものです。\n"+
+"印刷されている本文をもとに、章・節ごとに内容を整理してください。\n"+
+"・重要な用語や定義、公式は漏らさず書き出してください。\n"+
+"・図や表は、何を示しているかを文章で説明してください。\n"+
+"・手書きの書き込み（線、丸囲み、メモなど）は本文と区別し、本文として扱わないでください。書き込みで強調されている箇所は「書き込みで強調あり」と注記してください。\n"+
+"・読み取れない部分は推測せず「判読不能」としてください。";
+}
+async function saveSettings(){await putMeta("settings",S.settings);renderSettings();}
+
+/* ---------- image processing ---------- */
+function processSource(src,w,h){
+  const p=PRESETS[S.settings.quality];
+  const sc=Math.min(1,p.side/Math.max(w,h));
+  const cw=Math.round(w*sc),ch=Math.round(h*sc);
+  const c=document.createElement("canvas");c.width=cw;c.height=ch;
+  const x=c.getContext("2d",{willReadFrequently:true});
+  x.imageSmoothingQuality="high";
+  x.drawImage(src,0,0,cw,ch);
+  if(S.settings.color==="gray"){
+    const id=x.getImageData(0,0,cw,ch),d=id.data,n=cw*ch;
+    const hist=new Uint32Array(256);const g=new Uint8Array(n);
+    for(let i=0,j=0;j<n;i+=4,j++){const v=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;g[j]=v;hist[v]++;}
+    let lo=0,hi=255,acc=0;
+    for(let v=0;v<256;v++){acc+=hist[v];if(acc>n*0.01){lo=v;break;}}
+    acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>n*0.06){hi=v;break;}}
+    const span=Math.max(30,hi-lo);
+    for(let i=0,j=0;j<n;i+=4,j++){let v=(g[j]-lo)*255/span;v=v<0?0:v>255?255:v;d[i]=d[i+1]=d[i+2]=v;}
+    x.putImageData(id,0,0);
+  }
+  return new Promise((res,rej)=>c.toBlob(b=>b?res({blob:b,w:cw,h:ch}):rej(new Error("画像の変換に失敗しました")),"image/jpeg",p.q));
+}
+
+let chain=Promise.resolve();let orderSeed=0;
+function queueSave(job){chain=chain.then(job).catch(e=>{console.error(e);toast("保存できませんでした："+(e.message||e));});return chain;}
+async function addPage(res,replaceId){
+  const data=await res.blob.arrayBuffer();
+  if(replaceId){
+    const old=S.pages.find(p=>p.id===replaceId);if(!old) return;
+    const np={...old,data,w:res.w,h:res.h,size:data.byteLength};
+    await idb("pages","readwrite",s=>s.put(np));
+    dropUrl(old.id);Object.assign(old,np);
+  }else{
+    const p={id:uid(),book:S.bookId,order:Date.now()*100+(orderSeed++%100),data,w:res.w,h:res.h,size:data.byteLength,created:Date.now()};
+    await idb("pages","readwrite",s=>s.put(p));
+    S.pages.push(p);
+  }
+  renderHeader();renderGrid();
+  askPersist();
+}
+let persistAsked=false;
+function askPersist(){if(persistAsked)return;persistAsked=true;try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}}
+
+/* ---------- camera ---------- */
+const cam={stream:null,timer:null,retakeId:null,wake:null};
+const AC={prev:null,moving:false,stillSince:0,cool:0,busy:false};
+function setStatus(t){$("camStatus").textContent=t;}
+async function openCamera(retakeId){
+  cam.retakeId=retakeId||null;
+  $("cam").classList.add("open");
+  const rb=$("retakeBadge");
+  if(cam.retakeId){const i=S.pages.findIndex(p=>p.id===cam.retakeId);rb.textContent=(i+1)+"ページ目を撮り直し";rb.style.display="block";}
+  else rb.style.display="none";
+  updateLast();
+  await startStream();
+}
+async function startStream(){
+  stopStream();
+  cam.fallback=false;
+  const oe=$("camErr");if(oe)oe.remove();
+  $("video").style.display="";$("camStatus").style.display="";$("autoChip").style.visibility="";
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){showCamError();return;}
+  try{
+    cam.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:2560},height:{ideal:1920}}});
+  }catch(e){showCamError();return;}
+  const v=$("video");v.srcObject=cam.stream;
+  try{await v.play();}catch(e){}
+  try{if(navigator.wakeLock) cam.wake=await navigator.wakeLock.request("screen");}catch(e){}
+  AC.prev=null;AC.moving=false;AC.stillSince=0;
+  setStatus(cam.retakeId?"シャッターを押してください":(S.settings.auto?"最初のページはシャッターで。あとはめくるだけで自動撮影します":"シャッターで撮影します"));
+  cam.timer=setInterval(autoTick,120);
+}
+function stopStream(){
+  clearInterval(cam.timer);cam.timer=null;
+  if(cam.stream){cam.stream.getTracks().forEach(t=>t.stop());cam.stream=null;}
+  try{cam.wake&&cam.wake.release();}catch(e){}cam.wake=null;
+}
+function closeCamera(){stopStream();$("cam").classList.remove("open");$("meter").style.width="0";cam.retakeId=null;}
+function showCamError(){
+  const st=$("stage");
+  const box=document.createElement("div");box.className="cam-err";box.id="camErr";
+  cam.fallback=true;
+  $("autoChip").style.visibility="hidden";
+  box.innerHTML="<p>スマホのカメラで撮影するモードです。</p><p>下の黄色いボタンを押す→撮る→「写真を使用」で1ページ保存されます。続けてボタンを押して次のページへ。</p>";
+  const b=document.createElement("button");b.className="big";b.textContent="このページを撮る";
+  b.onclick=()=>$("retakePicker").click();
+  box.appendChild(b);
+  const old=$("camErr");if(old)old.remove();
+  $("video").style.display="none";$("camStatus").style.display="none";
+  st.appendChild(box);
+}
+const small=document.createElement("canvas");small.width=64;small.height=48;
+const sctx=small.getContext("2d",{willReadFrequently:true});
+function autoTick(){
+  const v=$("video");if(!v.videoWidth||AC.busy) return;
+  sctx.drawImage(v,0,0,64,48);
+  const d=sctx.getImageData(0,0,64,48).data;const g=new Uint8Array(3072);
+  for(let i=0,j=0;j<3072;i+=4,j++) g[j]=(d[i]+d[i+1]*2+d[i+2])>>2;
+  let diff=0;
+  if(AC.prev){for(let j=0;j<3072;j++) diff+=Math.abs(g[j]-AC.prev[j]);diff/=3072;}
+  AC.prev=g;
+  if(!S.settings.auto||cam.retakeId){$("meter").style.width="0";return;}
+  const now=performance.now();
+  if(diff>9){AC.moving=true;AC.stillSince=0;$("meter").style.width="0";setStatus("めくり中…");}
+  else if(diff<3.2){
+    if(AC.moving&&now>AC.cool){
+      if(!AC.stillSince) AC.stillSince=now;
+      const el=now-AC.stillSince,need=900;
+      $("meter").style.width=Math.min(100,el/need*100)+"%";
+      if(el>=need){AC.moving=false;AC.stillSince=0;AC.cool=now+700;$("meter").style.width="0";shoot();}
+      else setStatus("止まったら撮影します");
+    }
+  }else{AC.stillSince=0;}
+}
+function shoot(){
+  const v=$("video");if(!v.videoWidth) return;
+  const f=$("flash");f.classList.add("on");setTimeout(()=>f.classList.remove("on"),60);
+  try{navigator.vibrate&&navigator.vibrate(25);}catch(e){}
+  const rid=cam.retakeId;
+  AC.busy=true;
+  const p=processSource(v,v.videoWidth,v.videoHeight);
+  AC.busy=false;
+  queueSave(async()=>{
+    const r=await p;await addPage(r,rid);updateLast();
+    if(rid){toast("撮り直しました");closeCamera();openViewer(S.pages.findIndex(x=>x.id===rid));}
+    else setStatus(S.pages.length+"ページ目を保存しました。次のページへ");
+  });
+}
+function updateLast(){
+  const p=S.pages[S.pages.length-1];
+  $("lastThumb").style.backgroundImage=p?"url("+urlOf(p)+")":"none";
+  $("camCount").textContent=S.pages.length+"ページ";
+}
+document.addEventListener("visibilitychange",()=>{
+  if(!$("cam").classList.contains("open")) return;
+  if(document.hidden) stopStream(); else if(!$("camErr")) startStream();
+});
+
+/* ---------- files ---------- */
+function loadImg(file){
+  return new Promise((res,rej)=>{const u=URL.createObjectURL(file);const im=new Image();
+    im.onload=()=>{res({im,u});};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("画像を読み込めませんでした"));};im.src=u;});
+}
+async function addFiles(files,replaceId){
+  const list=[...files];
+  for(let i=0;i<list.length;i++){
+    await queueSave(async()=>{
+      const {im,u}=await loadImg(list[i]);
+      const r=await processSource(im,im.naturalWidth,im.naturalHeight);URL.revokeObjectURL(u);
+      await addPage(r,replaceId&&i===0?replaceId:null);
+    });
+  }
+  if(list.length) toast(replaceId?"撮り直しました":list.length+"ページ追加しました");
+}
+
+/* ---------- viewer ---------- */
+let vi=0;
+function openViewer(i){
+  if(i<0||i>=S.pages.length){closeViewer();return;}
+  vi=i;const p=S.pages[i];
+  $("vImg").src=urlOf(p);$("vLabel").textContent=(i+1)+" / "+S.pages.length+"ページ　"+Math.round(p.size/1024)+"KB";
+  $("viewer").classList.add("open");
+}
+function closeViewer(){$("viewer").classList.remove("open");}
+
+/* ---------- export ---------- */
+let dlCap;
+async function getDownloads(){
+  if(dlCap!==undefined) return dlCap;
+  try{dlCap=(window.claude&&window.claude.use)?await window.claude.use("downloads"):null;}catch(e){dlCap=null;}
+  return dlCap;
+}
+async function saveFile(name,blob){
+  const dl=await getDownloads();
+  if(dl){await dl.save({filename:name,data:blob});return;}
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
+}
+function safeName(s){return (s||"教科書").replace(/[\\/:*?"<>|]/g,"_").slice(0,40);}
+async function exportPDF(){
+  if(!S.pages.length){toast("まだページがありません");return;}
+  if(!window.jspdf){toast("PDFの準備ができていません。通信を確認してもう一度お試しください");return;}
+  const btn=$("exportBtn");btn.disabled=true;
+  const {jsPDF}=window.jspdf;const per=S.settings.perFile;const total=S.pages.length;
+  const parts=Math.ceil(total/per);
+  try{
+    for(let k=0;k<parts;k++){
+      const from=k*per,to=Math.min(total,from+per);
+      $("progress").textContent=(parts>1?(k+1)+"/"+parts+"つ目のPDFを作成中…":"PDFを作成中…");
+      let doc=null;
+      for(let i=from;i<to;i++){
+        const p=S.pages[i];const W=595,H=Math.round(595*p.h/p.w);const o=W>H?"l":"p";
+        if(!doc) doc=new jsPDF({unit:"pt",format:[W,H],orientation:o,compress:true});
+        else doc.addPage([W,H],o);
+        doc.addImage(new Uint8Array(p.data),"JPEG",0,0,W,H,undefined,"NONE");
+        if(i%10===0) await new Promise(r=>setTimeout(r,0));
+      }
+      const blob=doc.output("blob");
+      const name=safeName(curBook().title)+(parts>1?"_p"+(from+1)+"-"+to:"")+".pdf";
+      $("progress").textContent=name+"（"+mb(blob.size)+"）を保存します";
+      try{await saveFile(name,blob);}
+      catch(e){
+        if(e&&e.code==="declined"){$("progress").textContent="保存をキャンセルしました";return;}
+        throw e;
+      }
+    }
+    $("progress").textContent=parts>1?parts+"つのPDFを書き出しました":"PDFを書き出しました";
+  }catch(e){
+    console.error(e);$("progress").textContent="書き出せませんでした："+(e.message||e.code||e);
+  }finally{btn.disabled=false;}
+}
+
+/* ---------- events ---------- */
+function bindSeg(id,key,cast){
+  document.querySelectorAll("#"+id+" button").forEach(b=>b.onclick=()=>{S.settings[key]=cast?cast(b.dataset.v):b.dataset.v;saveSettings();});
+}
+bindSeg("segQ","quality");bindSeg("segC","color");bindSeg("segP","perFile",Number);
+$("openCam").onclick=()=>openCamera(null);
+$("camDone").onclick=()=>{closeCamera();toast(S.pages.length+"ページ保存済み");};
+$("shutter").onclick=()=>{if(cam.fallback){$("retakePicker").click();return;}AC.moving=false;AC.stillSince=0;shoot();};
+$("autoChip").onclick=()=>{S.settings.auto=!S.settings.auto;saveSettings();
+  setStatus(S.settings.auto?"めくって止まったら自動で撮影します":"シャッターで撮影します");};
+$("pickBtn").onclick=()=>$("picker").click();
+$("picker").onchange=e=>{addFiles(e.target.files);e.target.value="";};
+$("retakePicker").onchange=e=>{const rid=cam.retakeId;addFiles(e.target.files,rid).then(()=>{updateLast();if(rid){closeCamera();}else{const bx=$("camErr");if(bx){const p=bx.querySelector("p");p.textContent=S.pages.length+"ページ目まで保存しました。次のページをめくってボタンを押してください。";}}});e.target.value="";};
+$("title").onchange=async e=>{const b=curBook();b.title=e.target.value.trim()||"無題の本";await idb("books","readwrite",s=>s.put(b));renderHeader();renderPrompt();};
+$("bookSel").onchange=e=>selectBook(e.target.value);
+$("newBook").onclick=async()=>{const b=await createBook("教科書"+(S.books.length+1));await selectBook(b.id);$("title").focus();$("title").select();};
+$("delBook").onclick=async()=>{
+  const b=curBook();
+  if(!confirm("「"+b.title+"」の"+S.pages.length+"ページをすべて削除します。元に戻せません。よろしいですか？")) return;
+  const ids=S.pages.map(p=>p.id);
+  await idb("pages","readwrite",s=>{ids.forEach(id=>s.delete(id));return null;});
+  await idb("books","readwrite",s=>s.delete(b.id));
+  S.books=S.books.filter(x=>x.id!==b.id);
+  if(!S.books.length) await createBook("教科書1");
+  await selectBook(S.books[0].id);toast("削除しました");
+};
+$("exportBtn").onclick=exportPDF;
+$("copyBtn").onclick=async()=>{
+  const ta=$("prompt");
+  try{await navigator.clipboard.writeText(ta.value);toast("依頼文をコピーしました");}
+  catch(e){ta.removeAttribute("readonly");ta.focus();ta.select();try{document.execCommand("copy");toast("依頼文をコピーしました");}catch(_){toast("文章を長押ししてコピーしてください");}ta.setAttribute("readonly","");}
+};
+$("vClose").onclick=closeViewer;
+$("vPrev").onclick=()=>{if(vi>0)openViewer(vi-1);};
+$("vNext").onclick=()=>{if(vi<S.pages.length-1)openViewer(vi+1);};
+$("vDel").onclick=async()=>{
+  const p=S.pages[vi];if(!confirm((vi+1)+"ページ目を削除しますか？")) return;
+  await idb("pages","readwrite",s=>s.delete(p.id));dropUrl(p.id);
+  S.pages.splice(vi,1);renderHeader();renderGrid();
+  if(!S.pages.length) closeViewer(); else openViewer(Math.min(vi,S.pages.length-1));
+};
+$("vRetake").onclick=()=>{const id=S.pages[vi].id;closeViewer();openCamera(id);};
+
+/* ---------- init ---------- */
+(async function init(){
+  try{
+    const st=await getMeta("settings");if(st) Object.assign(S.settings,st);
+    await loadBooks();
+    const cur=await getMeta("currentBook");
+    await selectBook(S.books.some(b=>b.id===cur)?cur:S.books[0].id);
+  }catch(e){
+    console.error(e);$("stats").textContent="この端末に保存できません（プライベートブラウズ中の可能性があります）";
+  }
+})();
+})();
+</script>
+</body>
+</html>

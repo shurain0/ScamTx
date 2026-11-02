@@ -103,6 +103,20 @@ select{padding:10px;border-radius:8px;border:1px solid var(--line);background:va
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;opacity:0;transition:.2s;z-index:50;pointer-events:none;max-width:90%}
 .toast.on{opacity:1}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+/* corner adjust */
+.qd{position:fixed;inset:0;background:#0d0f13;z-index:60;display:none;flex-direction:column;color:#fff}
+.qd.open{display:flex}
+.qd-top{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 6px}
+.qd-top button{background:#fff;color:#000;border:none;border-radius:99px;padding:6px 16px;font-weight:700}
+.qd-hint{padding:0 14px 8px;font-size:.88rem;color:#C9CED8;line-height:1.5;margin:0}
+.qd-stage{position:relative;flex:1;min-height:0;touch-action:none}
+.qd-stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.qd-loupe{position:absolute;top:8px;width:132px;height:132px!important;border-radius:50%;border:3px solid #FFE14D;display:none;pointer-events:none;background:#000}
+.qd-busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);font-weight:700}
+.qd-busy.on{display:flex}
+.qd-bot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 14px)}
+.qd-bot button{background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:10px;padding:12px 6px;font-size:.92rem}
+.qd-bot .apply{grid-column:1/-1;background:#FFE14D;color:#2A2300;font-weight:700;font-size:1rem;padding:14px}
 </style>
 </head>
 <body>
@@ -143,6 +157,8 @@ select{padding:10px;border-radius:8px;border:1px solid var(--line);background:va
   <h2><span class="n">3</span>確認と編集</h2>
   <p class="hint" style="margin-top:0">ページをタップすると、補正の切り替え・消しゴム・回転・ページ番号の修正・並べ替えができます。番号の後ろに「?」が付いているものは推定です。</p>
   <div class="row" style="margin-bottom:10px"><button class="btn" id="rotAllL">全ページを左に回す</button><button class="btn" id="rotAllR">全ページを右に回す</button></div>
+  <div class="row" style="margin-bottom:10px"><button class="btn" id="redoAll">全ページの補正をやり直す</button></div>
+  <p class="hint" style="margin:-4px 0 10px">歪み補正の仕組みを新しくしました。以前に補正したページは、これでやり直すときれいになります。四隅を手で合わせたページはその位置のまま補正します。</p>
   <div class="grid" id="grid"></div>
 
   <h2><span class="n">4</span>PDFを作る</h2>
@@ -153,6 +169,9 @@ select{padding:10px;border-radius:8px;border:1px solid var(--line);background:va
       <p class="hint">書き込みを本文と区別したいときはカラーにしてください。</p></div>
     <div class="field"><label>1ファイルあたりのページ数</label>
       <div class="seg" id="segP"><button data-v="30">30</button><button data-v="50">50</button><button data-v="90">90</button><button data-v="9999">分けない</button></div></div>
+    <div class="field"><label>用紙サイズ</label>
+      <div class="seg" id="segS"><button data-v="a4">A4</button><button data-v="fit">ページの大きさのまま</button></div>
+      <p class="hint">A4ではページの縦横比を保ったまま中央に収めます。引き伸ばしはしません。</p></div>
     <button class="btn dark" id="exportBtn" style="width:100%">きれいなPDFを作成</button>
     <div class="prog" id="exProg"></div>
   </div>
@@ -168,6 +187,7 @@ select{padding:10px;border-radius:8px;border:1px solid var(--line);background:va
   <div class="tools">
     <div class="trow">
       <button class="tb" id="tDew">歪み補正</button>
+      <button class="tb" id="tQuad">四隅を合わせる</button>
       <button class="tb" id="tSha">影の除去</button>
       <button class="tb" id="tFin">指の除去</button>
       <button class="tb" id="tRot">回転</button>
@@ -190,8 +210,410 @@ select{padding:10px;border-radius:8px;border:1px solid var(--line);background:va
     </div>
   </div>
 </div>
+<div class="qd" id="qd" role="dialog" aria-label="四隅を合わせる">
+  <div class="qd-top"><strong id="qdLabel">四隅を合わせる</strong><button id="qdClose">やめる</button></div>
+  <p class="qd-hint">黄色い丸をドラッグして、ページの四隅に合わせてください。行の曲がりはこの範囲の中で自動で揃えます。</p>
+  <div class="qd-stage" id="qdStage"><canvas id="qdCv"></canvas><canvas class="qd-loupe" id="qdLoupe" width="264" height="264"></canvas><div class="qd-busy" id="qdBusy">補正しています…</div></div>
+  <div class="qd-bot">
+    <button id="qdAuto">自動検出に戻す</button>
+    <button id="qdFull">写真全体を使う</button>
+    <button class="apply" id="qdApply">この四隅で補正する</button>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
+<script>
+/* ScanCore: page detection, perspective, deskew, line-curvature dewarp, background flattening */
+(function(root){
+"use strict";
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+
+function resizeGray(img,maxSide){
+  const W=img.width,H=img.height,d=img.data;
+  const s=Math.min(1,maxSide/Math.max(W,H));
+  const w=Math.max(1,Math.round(W*s)),h=Math.max(1,Math.round(H*s));
+  const out=new Float32Array(w*h),cnt=new Float32Array(w*h);
+  const fx=w/W,fy=h/H;
+  for(let y=0;y<H;y++){const ty=Math.min(h-1,(y*fy)|0)*w;
+    for(let x=0,i=y*W*4;x<W;x++,i+=4){const t=ty+Math.min(w-1,(x*fx)|0);
+      out[t]+=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;cnt[t]++;}}
+  for(let i=0;i<w*h;i++)out[i]/=cnt[i]||1;
+  return {g:out,w,h};
+}
+function boxBlur(src,w,h,r){
+  const tmp=new Float32Array(w*h),out=new Float32Array(w*h),n=2*r+1;
+  for(let y=0;y<h;y++){const row=y*w;let acc=0;
+    for(let x=-r;x<=r;x++)acc+=src[row+clamp(x,0,w-1)];
+    for(let x=0;x<w;x++){tmp[row+x]=acc/n;acc+=src[row+Math.min(w-1,x+r+1)]-src[row+Math.max(0,x-r)];}}
+  for(let x=0;x<w;x++){let acc=0;
+    for(let y=-r;y<=r;y++)acc+=tmp[clamp(y,0,h-1)*w+x];
+    for(let y=0;y<h;y++){out[y*w+x]=acc/n;acc+=tmp[Math.min(h-1,y+r+1)*w+x]-tmp[Math.max(0,y-r)*w+x];}}
+  return out;
+}
+function otsu(a){
+  const hist=new Float64Array(256);for(let i=0;i<a.length;i++)hist[clamp(a[i]|0,0,255)]++;
+  let tot=a.length,sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];
+  let wb=0,sb=0,best=-1,t=128;
+  for(let i=0;i<256;i++){wb+=hist[i];if(!wb)continue;const wf=tot-wb;if(!wf)break;sb+=i*hist[i];
+    const mb=sb/wb,mf=(sum-sb)/wf,v=wb*wf*(mb-mf)*(mb-mf);if(v>best){best=v;t=i;}}
+  return t;
+}
+function boxCount(m,w,h,r){
+  const tmp=new Int32Array(w*h),out=new Int32Array(w*h);
+  for(let y=0;y<h;y++){const row=y*w;let acc=0;
+    for(let x=-r;x<=r;x++)acc+=m[row+clamp(x,0,w-1)];
+    for(let x=0;x<w;x++){tmp[row+x]=acc;acc+=m[row+Math.min(w-1,x+r+1)]-m[row+Math.max(0,x-r)];}}
+  for(let x=0;x<w;x++){let acc=0;
+    for(let y=-r;y<=r;y++)acc+=tmp[clamp(y,0,h-1)*w+x];
+    for(let y=0;y<h;y++){out[y*w+x]=acc;acc+=tmp[Math.min(h-1,y+r+1)*w+x]-tmp[Math.max(0,y-r)*w+x];}}
+  return out;
+}
+function dilate(m,w,h,r){const c=boxCount(m,w,h,r),o=new Uint8Array(w*h);for(let i=0;i<o.length;i++)o[i]=c[i]>0?1:0;return o;}
+function erode(m,w,h,r){const c=boxCount(m,w,h,r),f=(2*r+1)*(2*r+1),o=new Uint8Array(w*h);for(let i=0;i<o.length;i++)o[i]=c[i]>=f?1:0;return o;}
+function fillHoles(m,w,h){
+  const seen=new Uint8Array(w*h),st=new Int32Array(w*h);let sp=0;
+  const push=i=>{if(!m[i]&&!seen[i]){seen[i]=1;st[sp++]=i;}};
+  for(let x=0;x<w;x++){push(x);push((h-1)*w+x);}
+  for(let y=0;y<h;y++){push(y*w);push(y*w+w-1);}
+  while(sp){const i=st[--sp],x=i%w;if(x>0)push(i-1);if(x<w-1)push(i+1);if(i>=w)push(i-w);if(i<w*(h-1))push(i+w);}
+  for(let i=0;i<m.length;i++)if(!m[i]&&!seen[i])m[i]=1;
+}
+function largestComponent(m,w,h){
+  const lab=new Int32Array(w*h),st=new Int32Array(w*h);let cur=0,best=0,bestA=0;
+  for(let s=0;s<m.length;s++){if(!m[s]||lab[s])continue;cur++;let sp=0,a=0;lab[s]=cur;st[sp++]=s;
+    while(sp){const i=st[--sp];a++;const x=i%w;
+      if(x>0&&m[i-1]&&!lab[i-1]){lab[i-1]=cur;st[sp++]=i-1;}
+      if(x<w-1&&m[i+1]&&!lab[i+1]){lab[i+1]=cur;st[sp++]=i+1;}
+      if(i>=w&&m[i-w]&&!lab[i-w]){lab[i-w]=cur;st[sp++]=i-w;}
+      if(i<w*(h-1)&&m[i+w]&&!lab[i+w]){lab[i+w]=cur;st[sp++]=i+w;}}
+    if(a>bestA){bestA=a;best=cur;}}
+  const o=new Uint8Array(w*h);for(let i=0;i<o.length;i++)o[i]=lab[i]===best?1:0;
+  return {m:o,area:bestA};
+}
+function hull(pts){
+  pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[];
+  for(const p of pts){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p);}
+  for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p);}
+  up.pop();lo.pop();return lo.concat(up);
+}
+function quadArea(q){let a=0;for(let i=0;i<4;i++){const p=q[i],n=q[(i+1)%4];a+=p[0]*n[1]-n[0]*p[1];}return a/2;}
+function convex(q){let s=0;for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4];
+  const z=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);if(z<=0)return false;}return true;}
+function angleAt(q,i){const a=q[(i+3)%4],b=q[i],c=q[(i+1)%4];
+  const v1=[a[0]-b[0],a[1]-b[1]],v2=[c[0]-b[0],c[1]-b[1]];
+  return Math.acos(clamp((v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(...v1)*Math.hypot(...v2)+1e-9),-1,1))*180/Math.PI;}
+function fitLine(pts){
+  let mx=0,my=0;for(const p of pts){mx+=p[0];my+=p[1];}mx/=pts.length;my/=pts.length;
+  let sxx=0,syy=0,sxy=0;for(const p of pts){const dx=p[0]-mx,dy=p[1]-my;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy;}
+  const th=0.5*Math.atan2(2*sxy,sxx-syy);return {px:mx,py:my,dx:Math.cos(th),dy:Math.sin(th)};
+}
+function intersect(l1,l2){
+  const den=l1.dx*l2.dy-l1.dy*l2.dx;if(Math.abs(den)<1e-6)return null;
+  const t=((l2.px-l1.px)*l2.dy-(l2.py-l1.py)*l2.dx)/den;return [l1.px+t*l1.dx,l1.py+t*l1.dy];
+}
+function sampleF(g,w,h,x,y,def){
+  if(x<0||y<0||x>w-1||y>h-1)return def;
+  const x0=x|0,y0=y|0,x1=Math.min(w-1,x0+1),y1=Math.min(h-1,y0+1),fx=x-x0,fy=y-y0;
+  const a=g[y0*w+x0],b=g[y0*w+x1],c=g[y1*w+x0],d=g[y1*w+x1];
+  return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy;
+}
+
+/* ---- page outline detection (returns quad tl,tr,br,bl in small coords, or null) ---- */
+function detectQuad(g,w,h){
+  const b=boxBlur(boxBlur(g,w,h,2),w,h,2);
+  const t=otsu(b);
+  let lo=0,ln=0,hi=0,hn=0;for(let i=0;i<b.length;i++){if(b[i]>t){hi+=b[i];hn++;}else{lo+=b[i];ln++;}}
+  if(!ln||!hn||hi/hn-lo/ln<28)return null;
+  let m=new Uint8Array(w*h);for(let i=0;i<m.length;i++)m[i]=b[i]>t?1:0;
+  const r=Math.max(2,Math.round(Math.max(w,h)/90));
+  m=erode(dilate(m,w,h,r),w,h,r);
+  fillHoles(m,w,h);
+  m=dilate(erode(m,w,h,2),w,h,2);
+  const comp=largestComponent(m,w,h);m=comp.m;
+  if(comp.area<0.18*w*h)return null;
+  const cand=[],bnd=[];
+  for(let y=0;y<h;y++){let a=-1,z=-1;for(let x=0;x<w;x++)if(m[y*w+x]){if(a<0)a=x;z=x;}if(a>=0){cand.push([a,y]);cand.push([z,y]);}}
+  for(let x=0;x<w;x++){let a=-1,z=-1;for(let y=0;y<h;y++)if(m[y*w+x]){if(a<0)a=y;z=y;}if(a>=0){cand.push([x,a]);cand.push([x,z]);}}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!m[i])continue;
+    if(x===0||y===0||x===w-1||y===h-1||!m[i-1]||!m[i+1]||!m[i-w]||!m[i+w])bnd.push([x,y]);}
+  const H=hull(cand);if(H.length<4)return null;
+  let q=[0,0,0,0].map(()=>null);
+  const pick=(f)=>H.reduce((a,p)=>f(p)>f(a)?p:a,H[0]);
+  q=[pick(p=>-p[0]-p[1]),pick(p=>p[0]-p[1]),pick(p=>p[0]+p[1]),pick(p=>p[1]-p[0])];
+  for(let it=0;it<4;it++)for(let k=0;k<4;k++){let best=quadArea(q),bp=q[k];
+    for(const p of H){const q2=q.slice();q2[k]=p;const a=quadArea(q2);if(a>best&&convex(q2)){best=a;bp=p;}}q[k]=bp;}
+  if(!convex(q))return null;
+  const diag=Math.hypot(w,h);
+  // refine each side with a line fit on boundary points
+  const lines=[];
+  for(let k=0;k<4;k++){
+    const a=q[k],c=q[(k+1)%4],len=dist(a,c),ux=(c[0]-a[0])/len,uy=(c[1]-a[1])/len;
+    let tol=0.02*diag,sel=null,L=null;
+    for(let pass=0;pass<3;pass++){
+      const base=L||{px:a[0],py:a[1],dx:ux,dy:uy};
+      sel=bnd.filter(p=>{const vx=p[0]-a[0],vy=p[1]-a[1],t=vx*ux+vy*uy;
+        const d=Math.abs((p[0]-base.px)*base.dy-(p[1]-base.py)*base.dx);return t>0.12*len&&t<0.88*len&&d<tol;});
+      if(sel.length<Math.max(12,0.3*len))break;
+      L=fitLine(sel);tol=Math.max(1.5,tol*0.5);
+    }
+    lines.push(L||{px:a[0],py:a[1],dx:ux,dy:uy});
+  }
+  const q2=[];
+  for(let k=0;k<4;k++){const p=intersect(lines[(k+3)%4],lines[k]);
+    q2.push(p&&dist(p,q[k])<0.06*diag?[clamp(p[0],0,w-1),clamp(p[1],0,h-1)]:q[k]);}
+  if(convex(q2))q=q2;
+  // validation
+  const area=quadArea(q);if(area<0.18*w*h)return null;
+  for(let k=0;k<4;k++){const an=angleAt(q,k);if(an<55||an>125)return null;}
+  const corners=[[0,0],[w-1,0],[w-1,h-1],[0,h-1]];
+  if(q.every((p,k)=>dist(p,corners[k])<0.025*diag))return null;
+  const off=Math.max(3,diag*0.008);let ok=0;
+  for(let k=0;k<4;k++){
+    const a=q[k],c=q[(k+1)%4],len=dist(a,c),nx=(c[1]-a[1])/len,ny=-(c[0]-a[0])/len;
+    let s=0,n=0,border=0;
+    for(let i=1;i<20;i++){const t=0.1+0.8*i/20,px=a[0]+(c[0]-a[0])*t,py=a[1]+(c[1]-a[1])*t;
+      const ox=px+nx*off,oy=py+ny*off;
+      if(ox<0||oy<0||ox>w-1||oy>h-1){border++;continue;}
+      s+=sampleF(b,w,h,px-nx*off,py-ny*off,255)-sampleF(b,w,h,ox,oy,0);n++;}
+    if(border>=10||(n&&s/n>14))ok++;
+  }
+  if(ok<4)return null;
+  // pull corners slightly inside so no background shows at the page edge
+  const cx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4,cy=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4;
+  return q.map(p=>{const dx=cx-p[0],dy=cy-p[1],l=Math.hypot(dx,dy)||1,k=Math.min(0.006*diag,l*0.05)/l;return [p[0]+dx*k,p[1]+dy*k];});
+}
+
+/* ---- homography ---- */
+function homography(src,dst){
+  const A=[],B=[];
+  for(let i=0;i<4;i++){const [x,y]=src[i],[u,v]=dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]);B.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);B.push(v);}
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    [A[c],A[p]]=[A[p],A[c]];[B[c],B[p]]=[B[p],B[c]];
+    for(let r=0;r<8;r++){if(r===c)continue;const f=A[r][c]/A[c][c];for(let k=c;k<8;k++)A[r][k]-=f*A[c][k];B[r]-=f*B[c];}}
+  const h=B.map((b,i)=>b/A[i][i]);h.push(1);return h;
+}
+
+/* ---- ink map ---- */
+function inkMap(g,w,h){
+  const mean=boxBlur(g,w,h,Math.max(6,Math.round(Math.max(w,h)/60)));
+  const m=new Uint8Array(w*h);
+  for(let i=0;i<m.length;i++)m[i]=(g[i]<mean[i]*0.86&&g[i]<mean[i]-10)?1:0;
+  return m;
+}
+function profileScore(m,w,h,axis){
+  const n=axis==="y"?h:w,P=new Float64Array(n);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(m[y*w+x])P[axis==="y"?y:x]++;
+  let s=0;for(let i=0;i<n;i++)s+=P[i]*P[i];return s;
+}
+/* ---- skew (returns {theta radians, axis}) ---- */
+function deskew(m,w,h){
+  let pts=[];for(let i=0;i<m.length;i++)if(m[i])pts.push(i);
+  if(pts.length<0.004*w*h)return null;
+  const step=Math.max(1,Math.floor(pts.length/40000));
+  const xs=[],ys=[];for(let i=0;i<pts.length;i+=step){xs.push(pts[i]%w-w/2);ys.push(((pts[i]/w)|0)-h/2);}
+  const R=Math.ceil(Math.hypot(w,h)/2)+2,hist=new Float64Array(2*R+1);
+  const score=(a,axis)=>{hist.fill(0);const c=Math.cos(a),s=Math.sin(a);
+    if(axis==="y")for(let i=0;i<xs.length;i++)hist[Math.round(ys[i]*c-xs[i]*s)+R]++;
+    else for(let i=0;i<xs.length;i++)hist[Math.round(xs[i]*c+ys[i]*s)+R]++;
+    let t=0;for(let i=0;i<hist.length;i++)t+=hist[i]*hist[i];return t;};
+  let best;
+  // CJK text is a grid in both directions, so pick the axis by how much clean whitespace separates lines
+  const gapFrac=(a,axis)=>{const fr=[];
+    for(let k=0;k<5;k++){const c0=-0.5+k*0.2,c1=c0+0.2;fr.push(gapOne(a,axis,c0,c1));}
+    fr.sort((p,q)=>p-q);return fr[2];};
+  const gapOne=(a,axis,c0,c1)=>{hist.fill(0);const c=Math.cos(a),s=Math.sin(a);let n=0;
+    for(let i=0;i<xs.length;i++){if(axis==="y"){const u=xs[i]/w;if(u<c0||u>=c1)continue;hist[Math.round(ys[i]*c-xs[i]*s)+R]++;}
+      else{const u=ys[i]/h;if(u<c0||u>=c1)continue;hist[Math.round(xs[i]*c+ys[i]*s)+R]++;}n++;}
+    if(n<50)return 0;let lo=0,hi=hist.length-1;while(lo<hi&&!hist[lo])lo++;while(hi>lo&&!hist[hi])hi--;
+    let mx=0;for(let i=lo;i<=hi;i++)mx=Math.max(mx,hist[i]);let g=0;for(let i=lo;i<=hi;i++)if(hist[i]<mx*0.04)g++;return g/Math.max(1,hi-lo+1);};
+  const bestFor=axis=>{let b={s:-1};for(let d=-8;d<=8.001;d+=0.25){const a=d*Math.PI/180,s=score(a,axis);if(s>b.s)b={s,a,axis};}return b;};
+  const by=bestFor("y"),bx=bestFor("x");
+  best=gapFrac(by.a,"y")>=gapFrac(bx.a,"x")?by:bx;
+  for(let d=-0.25;d<=0.25;d+=0.05){const a=best.a+d*Math.PI/180,s=score(a,best.axis);if(s>best.s)best={s,a,axis:best.axis};}
+  const s0=score(0,best.axis);
+  const theta=(Math.abs(best.a)<0.15*Math.PI/180||best.s<s0*1.01)?0:best.a;
+  return {theta,axis:best.axis};
+}
+function rotateBin(m,w,h,theta){
+  if(!theta)return m;
+  const o=new Uint8Array(w*h),c=Math.cos(theta),s=Math.sin(theta),cx=w/2,cy=h/2;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const dx=x-cx,dy=y-cy;
+    const sx=Math.round(cx+dx*c-dy*s),sy=Math.round(cy+dx*s+dy*c);
+    if(sx>=0&&sy>=0&&sx<w&&sy<h)o[y*w+x]=m[sy*w+sx];}
+  return o;
+}
+function transpose(m,w,h){const o=new Uint8Array(w*h);for(let y=0;y<h;y++)for(let x=0;x<w;x++)o[x*h+y]=m[y*w+x];return o;}
+
+/* ---- text-line curvature field (horizontal lines). returns {gx,gy,D} or null ---- */
+function linePeriod(profiles,n){
+  const maxL=Math.min(140,Math.floor(n/4)),acf=new Float64Array(maxL+1);let used=0;
+  for(const P of profiles){let mu=0;for(let i=0;i<n;i++)mu+=P[i];mu/=n;let e=0;for(let i=0;i<n;i++)e+=(P[i]-mu)*(P[i]-mu);if(e<1e-6)continue;used++;
+    for(let l=3;l<=maxL;l++){let s=0;for(let i=0;i+l<n;i++)s+=(P[i]-mu)*(P[i+l]-mu);acf[l]+=s/e;}}
+  if(!used)return 0;for(let l=3;l<=maxL;l++)acf[l]/=used;
+  let gmax=0;for(let l=5;l<maxL;l++)if(acf[l]>acf[l-1]&&acf[l]>=acf[l+1]&&acf[l]>gmax)gmax=acf[l];
+  if(gmax<0.15)return 0;
+  for(let l=5;l<maxL;l++)if(acf[l]>acf[l-1]&&acf[l]>=acf[l+1]&&acf[l]>=0.6*gmax){
+    const a=acf[l-1],b=acf[l],c=acf[l+1],den=a-2*b+c;return l+(den<0?0.5*(a-c)/den:0);}
+  return 0;
+}
+function curveField(m,w,h){
+  const S0=8,sw0=w/S0,coarse=[];
+  for(let s=0;s<S0;s++){const P=new Float32Array(h),x0=Math.round(s*sw0),x1=Math.round((s+1)*sw0);
+    for(let y=0;y<h;y++){let c=0;for(let x=x0;x<x1;x++)c+=m[y*w+x];P[y]=c;}coarse.push(P);}
+  const L=linePeriod(coarse.slice(2,6),h)||linePeriod(coarse,h);
+  if(!L||L<4)return null;
+  const S=clamp(Math.floor(w/(2.2*L)),6,40),sw=w/S;
+  const prof=[],ink=[];
+  for(let s=0;s<S;s++){const P=new Float32Array(h),x0=Math.round(s*sw),x1=Math.round((s+1)*sw);let t=0;
+    for(let y=0;y<h;y++){let c=0;for(let x=x0;x<x1;x++)c+=m[y*w+x];P[y]=c;t+=c;}
+    const Q=new Float32Array(h);for(let y=0;y<h;y++)Q[y]=(P[Math.max(0,y-1)]+2*P[y]+P[Math.min(h-1,y+1)])/4;
+    prof.push(Q);ink.push(t);}
+  const win=Math.round(Math.max(4.5*L,h/7)),K=Math.max(1,Math.floor((h-win)/(win/2))+1);
+  const bandY=[];for(let k=0;k<K;k++)bandY.push(Math.round(k*(h-win)/Math.max(1,K-1)));
+  const maxd=Math.max(2,Math.round(0.45*L));
+  // reference strip: most ink within central half
+  let ref=Math.floor(S/2),rb=-1;for(let s=Math.floor(S/4);s<Math.ceil(3*S/4);s++)if(ink[s]>rb){rb=ink[s];ref=s;}
+  const minInk=sw*win*0.015;
+  const pair=(k,a,b,center)=>{ // shift d such that line at y in a appears at y+d in b
+    const y0=bandY[k],y1=Math.min(h,y0+win),A=prof[a],B=prof[b];
+    let ia=0,ib=0;for(let y=y0;y<y1;y++){ia+=A[y];ib+=B[y];}
+    if(ia<minInk||ib<minInk)return null;
+    const ma=ia/(y1-y0),mb=ib/(y1-y0);
+    let ea=0;for(let y=y0;y<y1;y++)ea+=(A[y]-ma)*(A[y]-ma);
+    const c0=Math.round(center),cs=[];
+    for(let d=c0-maxd;d<=c0+maxd;d++){let s=0,eb=0;
+      for(let y=y0;y<y1;y++){const yy=y+d;const v=(yy>=0&&yy<h?B[yy]:0)-mb;s+=(A[y]-ma)*v;eb+=v*v;}
+      cs.push(s/Math.sqrt(ea*eb+1e-9));}
+    let bi=1;for(let i=1;i<cs.length-1;i++)if(cs[i]>cs[bi])bi=i;
+    if(cs[bi]<0.45||cs[bi]<cs[0]||cs[bi]<cs[cs.length-1])return null;
+    const a2=cs[bi-1],b2=cs[bi],c2=cs[bi+1],den=a2-2*b2+c2;
+    return {d:c0-maxd+bi+(den<0?0.5*(a2-c2)/den:0),c:b2};
+  };
+  const D=[];let validBands=0;const bandOk=[];
+  for(let k=0;k<K;k++){
+    const row=new Float32Array(S);let good=0,tried=0;
+    let pred=0,acc=0;
+    for(let s=ref;s<S-1;s++){const r=pair(k,s,s+1,pred);tried++;
+      if(r){good++;pred=r.d;acc+=r.d;}else{pred*=0.7;acc+=0;}row[s+1]=acc;}
+    pred=0;acc=0;
+    for(let s=ref;s>0;s--){const r=pair(k,s,s-1,pred);tried++;
+      if(r){good++;pred=r.d;acc+=r.d;}else{pred*=0.7;}row[s-1]=acc;}
+    D.push(row);const ok=good>=0.5*tried;bandOk.push(ok);if(ok)validBands++;
+  }
+  if(!validBands)return null;
+  for(let k=0;k<K;k++)if(!bandOk[k]){let n=-1,bd=1e9;for(let j=0;j<K;j++)if(bandOk[j]&&Math.abs(j-k)<bd){bd=Math.abs(j-k);n=j;}D[k]=D[n].slice();}
+  // smooth
+  const sm=D.map(r=>r.map((v,s)=>(r[Math.max(0,s-1)]+2*v+r[Math.min(S-1,s+1)])/4));
+  const D2=sm.map((r,k)=>r.map((v,s)=>(sm[Math.max(0,k-1)][s]+2*v+sm[Math.min(K-1,k+1)][s])/4));
+  let mx=0;for(const r of D2)for(const v of r)mx=Math.max(mx,Math.abs(v));
+  if(mx<0.8||mx>5*L)return null;
+  const gx=[];for(let s=0;s<S;s++)gx.push((s+0.5)*sw);
+  const gy=bandY.map(y=>y+win/2);
+  const flat=new Float32Array(K*S);for(let k=0;k<K;k++)for(let s=0;s<S;s++)flat[k*S+s]=D2[k][s];
+  return {gx,gy,D:flat,L,max:mx};
+}
+function gridIndex(g,v){ // returns [i,f] for interpolation with clamped ends
+  if(v<=g[0])return [0,0];const n=g.length;if(v>=g[n-1])return [n-2<0?0:n-2,n<2?0:1];
+  let i=0;while(i<n-2&&g[i+1]<v)i++;return [i,(v-g[i])/(g[i+1]-g[i])];
+}
+function fieldAt(F,x,y){
+  const nx=F.gx.length,ny=F.gy.length;
+  const [ix,fx]=nx>1?gridIndex(F.gx,x):[0,0],[iy,fy]=ny>1?gridIndex(F.gy,y):[0,0];
+  const ix1=Math.min(nx-1,ix+1),iy1=Math.min(ny-1,iy+1),D=F.D;
+  return (D[iy*nx+ix]*(1-fx)+D[iy*nx+ix1]*fx)*(1-fy)+(D[iy1*nx+ix]*(1-fx)+D[iy1*nx+ix1]*fx)*fy;
+}
+function remapBin(m,w,h,F,axis){
+  const o=new Uint8Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    if(axis==="y"){const sy=Math.round(y+fieldAt(F,x,y));if(sy>=0&&sy<h)o[y*w+x]=m[sy*w+x];}
+    else{const sx=Math.round(x+fieldAt(F,x,y));if(sx>=0&&sx<w)o[y*w+x]=m[y*w+sx];}}
+  return o;
+}
+function lineFieldChecked(m,w,h,axis){
+  let F;
+  if(axis==="y")F=curveField(m,w,h);
+  else{const t=transpose(m,w,h),Ft=curveField(t,h,w);
+    if(Ft){const nx=Ft.gy.length,ny=Ft.gx.length,D=new Float32Array(nx*ny);
+      for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++)D[iy*nx+ix]=Ft.D[ix*ny+iy];
+      F={gx:Ft.gy,gy:Ft.gx,D,L:Ft.L,max:Ft.max};}}
+  if(!F)return null;
+  const before=profileScore(m,w,h,axis),after=profileScore(remapBin(m,w,h,F,axis),w,h,axis);
+  return after>before*1.04?F:null;
+}
+
+/* ---- background flattening (in place on RGBA) ---- */
+function flatten(img){
+  const w=img.width,h=img.height,d=img.data,bs=16,bw=Math.ceil(w/bs),bh=Math.ceil(h/bs);
+  const B=new Float32Array(bw*bh);
+  for(let by=0;by<bh;by++)for(let bx=0;bx<bw;bx++){let mx=0;
+    const y1=Math.min(h-1,(by+1)*bs),x1=Math.min(w-1,(bx+1)*bs);
+    for(let y=by*bs;y<y1;y+=2)for(let x=bx*bs;x<x1;x+=2){const i=(y*w+x)*4,j=i+4,k=i+w*4;
+      const v=((d[i]+d[j]+d[k])*0.299+(d[i+1]+d[j+1]+d[k+1])*0.587+(d[i+2]+d[j+2]+d[k+2])*0.114)/3;if(v>mx)mx=v;}
+    B[by*bw+bx]=mx;}
+  const M=new Float32Array(bw*bh),r=3;
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){let mx=0;
+    for(let yy=Math.max(0,y-r);yy<=Math.min(bh-1,y+r);yy++)for(let xx=Math.max(0,x-r);xx<=Math.min(bw-1,x+r);xx++)mx=Math.max(mx,B[yy*bw+xx]);M[y*bw+x]=mx;}
+  const G=boxBlur(boxBlur(M,bw,bh,2),bw,bh,1);
+  for(let y=0;y<h;y++){const gy=clamp((y+0.5)/bs-0.5,0,bh-1);
+    for(let x=0,i=y*w*4;x<w;x++,i+=4){const bg=sampleF(G,bw,bh,clamp((x+0.5)/bs-0.5,0,bw-1),gy,255);
+      if(bg<70)continue;const k=Math.min(2.4,248/bg);
+      d[i]=Math.min(255,d[i]*k);d[i+1]=Math.min(255,d[i+1]*k);d[i+2]=Math.min(255,d[i+2]*k);}}
+}
+
+/* ---- main ---- */
+/* work: {width,height,data RGBA}; opts:{side, quad: null|"auto"|[[nx,ny]x4], dewarp:bool, flatten:bool}
+   returns {img, quad (normalized or null), info} */
+function processImage(work,opts){
+  const W=work.width,H=work.height,src=work.data,side=opts.side||1600;
+  const sm=resizeGray(work,800),sx=sm.w/W,sy=sm.h/H;
+  let quad=null;
+  if(Array.isArray(opts.quad))quad=opts.quad.map(p=>[p[0]*W,p[1]*H]);
+  else if(opts.quad==="auto"){const q=detectQuad(sm.g,sm.w,sm.h);if(q)quad=q.map(p=>[(p[0]+0.5)/sx-0.5,(p[1]+0.5)/sy-0.5]);}
+  let ow,oh,Hm=null,sc;
+  if(quad){const [tl,tr,br,bl]=quad;const qw=Math.max(dist(tl,tr),dist(bl,br)),qh=Math.max(dist(tl,bl),dist(tr,br));
+    sc=Math.min(1.15,side/Math.max(qw,qh));ow=Math.max(8,Math.round(qw*sc));oh=Math.max(8,Math.round(qh*sc));
+    Hm=homography([[0,0],[ow,0],[ow,oh],[0,oh]],quad);}
+  else{sc=Math.min(1,side/Math.max(W,H));ow=Math.round(W*sc);oh=Math.round(H*sc);}
+  const map0=(x,y)=>{if(Hm){const z=Hm[6]*x+Hm[7]*y+1;return [(Hm[0]*x+Hm[1]*y+Hm[2])/z,(Hm[3]*x+Hm[4]*y+Hm[5])/z];}return [(x+0.5)/sc-0.5,(y+0.5)/sc-0.5];};
+  let theta=0,F=null,axis="y";
+  if(opts.dewarp!==false){
+    const as=Math.min(1,900/Math.max(ow,oh)),aw=Math.round(ow*as),ah=Math.round(oh*as);
+    const A=new Float32Array(aw*ah);
+    for(let y=0;y<ah;y++)for(let x=0;x<aw;x++){const [X,Y]=map0((x+0.5)/as-0.5,(y+0.5)/as-0.5);
+      A[y*aw+x]=sampleF(sm.g,sm.w,sm.h,(X+0.5)*sx-0.5,(Y+0.5)*sy-0.5,255);}
+    const ink=inkMap(A,aw,ah);
+    const sk=deskew(ink,aw,ah);
+    // with a detected page outline the text is already aligned to the page edges; residual tilt is left to the line field
+    if(sk){theta=quad?0:sk.theta;axis=sk.axis;
+      const R=rotateBin(ink,aw,ah,theta);
+      const Fs=lineFieldChecked(R,aw,ah,axis);
+      if(Fs)F={gx:Fs.gx.map(v=>v/as),gy:Fs.gy.map(v=>v/as),D:Fs.D.map(v=>v/as),max:Fs.max/as};}
+  }
+  const out={width:ow,height:oh,data:new Uint8ClampedArray(ow*oh*4)},od=out.data;
+  const c=Math.cos(theta),s=Math.sin(theta),cx=ow/2,cy=oh/2;
+  for(let y=0;y<oh;y++)for(let x=0;x<ow;x++){
+    let x1=x,y1=y;
+    if(F){const dd=fieldAt(F,x,y);if(axis==="y")y1+=dd;else x1+=dd;}
+    let x2=x1,y2=y1;if(theta){const dx=x1-cx,dy=y1-cy;x2=cx+dx*c-dy*s;y2=cy+dx*s+dy*c;}
+    if(quad){x2=clamp(x2,1.5,ow-2.5);y2=clamp(y2,1.5,oh-2.5);}
+    const [X,Y]=map0(x2,y2);const o=(y*ow+x)*4;
+    if(X<0||Y<0||X>W-1||Y>H-1){od[o]=od[o+1]=od[o+2]=255;od[o+3]=255;continue;}
+    const x0=X|0,y0=Y|0,xa=Math.min(W-1,x0+1),ya=Math.min(H-1,y0+1),fx=X-x0,fy=Y-y0;
+    const i00=(y0*W+x0)*4,i01=(y0*W+xa)*4,i10=(ya*W+x0)*4,i11=(ya*W+xa)*4;
+    for(let ch=0;ch<3;ch++)od[o+ch]=(src[i00+ch]*(1-fx)+src[i01+ch]*fx)*(1-fy)+(src[i10+ch]*(1-fx)+src[i11+ch]*fx)*fy;
+    od[o+3]=255;}
+  if(opts.flatten!==false)flatten(out);
+  return {img:out,quad:quad?quad.map(p=>[p[0]/W,p[1]/H]):null,
+    info:{page:!!quad,skew:theta*180/Math.PI,curve:F?F.max:0,axis}};
+}
+root.ScanCore={processImage,detectQuad,resizeGray};
+})(typeof window!=="undefined"?window:globalThis);
+
+</script>
 <script>
 (function(){
 "use strict";
@@ -200,7 +622,7 @@ const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const PDFJS_W="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const TESS="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 const SRC_MAX=2200, OUT_MAX=1800;
-const P={pages:[],settings:{title:"",color:"color",perFile:50,split:true,rot:0},ignored:[],keep:[],seen:[]};
+const P={pages:[],settings:{title:"",color:"color",perFile:50,split:true,rot:0,paper:"a4"},ignored:[],keep:[],seen:[]};
 const urls=new Map();
 
 /* ---------- utils ---------- */
@@ -352,7 +774,10 @@ async function processPage(p){
   try{
     const o=p.opt,c=await srcCanvas(p.src,o.rot);
     let img=c.getContext("2d",{willReadFrequently:true}).getImageData(0,0,c.width,c.height);
-    if(o.dewarp){const d=dewarp(img);if(d)img=d;}
+    if(o.dewarp){
+      const r=ScanCore.processImage(img,{side:SRC_MAX,quad:o.quad||"auto",dewarp:true,flatten:false});
+      img=new ImageData(r.img.data,r.img.width,r.img.height);p.det=r.quad;
+    }
     const mk=o.finger?skinMask(img):null;
     if(o.shadow)flatten(img);
     if(mk)applyMask(img,mk);
@@ -551,6 +976,7 @@ async function loadEd(){
   const l=label(p);$("edLabel").textContent=(ei+1)+" / "+P.pages.length+"枚目　"+(l.t==="?"?"番号なし":l.t);
   $("tNum").value=p.num!=null?p.num:"";
   ["tDew","tSha","tFin"].forEach((id,k)=>$(id).setAttribute("aria-pressed",String(p.opt[["dewarp","shadow","finger"][k]])));
+  $("tQuad").setAttribute("aria-pressed",String(!!p.opt.quad));
   $("tErase").setAttribute("aria-pressed",String(erasing));
   edImg=null;edOrig=null;
   if(!p.out){$("edBusy").style.display="block";await processPage(p);$("edBusy").style.display="none";}
@@ -566,7 +992,7 @@ function closeEd(){$("ed").classList.remove("open");renderGrid();renderChecks();
 async function reprocessEd(){const p=P.pages[ei];$("edBusy").style.display="block";await processPage(p);$("edBusy").style.display="none";await loadEd();}
 function toggleOpt(k){const p=P.pages[ei];p.opt[k]=!p.opt[k];reprocessEd();}
 $("tDew").onclick=()=>toggleOpt("dewarp");$("tSha").onclick=()=>toggleOpt("shadow");$("tFin").onclick=()=>toggleOpt("finger");
-$("tRot").onclick=()=>{const p=P.pages[ei];if(p.opt.strokes.length&&!confirm("回転すると消しゴムの跡がリセットされます。よろしいですか？"))return;p.opt.rot=(p.opt.rot+90)%360;p.opt.strokes=[];reprocessEd();};
+$("tRot").onclick=()=>{const p=P.pages[ei];if(p.opt.strokes.length&&!confirm("回転すると消しゴムの跡がリセットされます。よろしいですか？"))return;p.opt.rot=(p.opt.rot+90)%360;p.opt.strokes=[];delete p.opt.quad;reprocessEd();};
 async function holdOrig(on){showOrig=on;if(on&&!edOrig){const p=P.pages[ei];edOrig=await srcCanvas(p.src,p.opt.rot);}drawEd();}
 $("tOrig").addEventListener("pointerdown",()=>holdOrig(true));["pointerup","pointerleave","pointercancel"].forEach(e=>$("tOrig").addEventListener(e,()=>{if(showOrig)holdOrig(false);}));
 $("tErase").onclick=()=>{erasing=!erasing;$("tErase").setAttribute("aria-pressed",String(erasing));if(erasing)toast("消したい所を指でなぞってください");};
@@ -602,9 +1028,13 @@ async function exportPDF(){
     const {jsPDF}=window.jspdf,per=P.settings.perFile,ps=P.pages,parts=Math.ceil(ps.length/per),base=(P.settings.title||"教科書").replace(/[\\/:*?"<>|]/g,"_");
     for(let k=0;k<parts;k++){const from=k*per,to=Math.min(ps.length,from+per);let doc=null;
       for(let i=from;i<to;i++){const p=ps[i];$("exProg").textContent="PDFを作成中… "+(i+1)+"/"+ps.length;
-        const buf=P.settings.color==="gray"?await grayJpeg(p.out):p.out,W=595,H=Math.round(595*p.oh/p.ow),o=W>H?"l":"p";
+        const buf=P.settings.color==="gray"?await grayJpeg(p.out):p.out;let W,H,ix=0,iy=0,iw,ih;
+        if(P.settings.paper!=="fit"){const land=p.ow>p.oh;W=land?841.89:595.28;H=land?595.28:841.89;
+          const k=Math.min(W/p.ow,H/p.oh);iw=p.ow*k;ih=p.oh*k;ix=(W-iw)/2;iy=(H-ih)/2;}
+        else{W=595.28;H=595.28*p.oh/p.ow;iw=W;ih=H;}
+        const o=W>H?"l":"p";
         if(!doc)doc=new jsPDF({unit:"pt",format:[W,H],orientation:o,compress:true});else doc.addPage([W,H],o);
-        doc.addImage(new Uint8Array(buf),"JPEG",0,0,W,H,undefined,"NONE");if(i%5===0)await sleep(0);}
+        doc.addImage(new Uint8Array(buf),"JPEG",ix,iy,iw,ih,undefined,"NONE");if(i%5===0)await sleep(0);}
       const blob=doc.output("blob");
       const nm=parts>1?(ps[from].num!=null&&ps[to-1].num!=null?base+"_p"+ps[from].num+"-"+ps[to-1].num:base+"_"+(k+1))+".pdf":base+".pdf";
       $("exProg").textContent=nm+"（"+(blob.size/1048576).toFixed(1)+"MB）を保存します";
@@ -617,14 +1047,91 @@ async function exportPDF(){
 
 /* ---------- settings & events ---------- */
 function setSeg(id,v){document.querySelectorAll("#"+id+" button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===String(v))));}
-function renderSettings(){setSeg("segR",P.settings.rot||0);setSeg("segC",P.settings.color);setSeg("segP",P.settings.perFile);$("splitChk").checked=P.settings.split;$("titleIn").value=P.settings.title||"";}
+function renderSettings(){setSeg("segS",P.settings.paper||"a4");setSeg("segR",P.settings.rot||0);setSeg("segC",P.settings.color);setSeg("segP",P.settings.perFile);$("splitChk").checked=P.settings.split;$("titleIn").value=P.settings.title||"";}
+document.querySelectorAll("#segS button").forEach(b=>b.onclick=async()=>{P.settings.paper=b.dataset.v;await saveMeta();renderSettings();});
 document.querySelectorAll("#segC button").forEach(b=>b.onclick=async()=>{P.settings.color=b.dataset.v;await saveMeta();renderSettings();});
 document.querySelectorAll("#segP button").forEach(b=>b.onclick=async()=>{P.settings.perFile=Number(b.dataset.v);await saveMeta();renderSettings();});
 document.querySelectorAll("#segR button").forEach(b=>b.onclick=async()=>{P.settings.rot=Number(b.dataset.v);await saveMeta();renderSettings();});
 async function rotateAll(d){if(!P.pages.length)return;if(running){toast("補正が終わるまでお待ちください");return;}
   if(!confirm("全"+P.pages.length+"ページを"+(d===90?"右":"左")+"に回します。補正とページ番号の読み取りをやり直します。"))return;
-  for(const p of P.pages){p.opt.rot=(p.opt.rot+d+360)%360;p.opt.strokes=[];p.out=null;p.ocrDone=false;p.cands=[];if(p.numSrc!=="user"){p.num=null;p.numSrc=null;}dropUrl(p.id);await savePage(p);}
+  for(const p of P.pages){p.opt.rot=(p.opt.rot+d+360)%360;p.opt.strokes=[];delete p.opt.quad;p.out=null;p.ocrDone=false;p.cands=[];if(p.numSrc!=="user"){p.num=null;p.numSrc=null;}dropUrl(p.id);await savePage(p);}
   renderGrid();runPipeline();}
+$("redoAll").onclick=async()=>{
+  if(!P.pages.length)return;if(running){toast("補正が終わるまでお待ちください");return;}
+  if(!confirm("全"+P.pages.length+"ページの補正をやり直します。ページ番号や並び順はそのままです。"))return;
+  for(const p of P.pages){p.out=null;dropUrl(p.id);await savePage(p);}
+  renderGrid();renderStats();runPipeline();
+};
+/* ---- corner adjust ---- */
+const QD={im:null,q:null,drag:-1,box:null,off:[0,0]};
+async function openQuad(){
+  const p=P.pages[ei];if(!p)return;
+  if(!p.opt.dewarp){p.opt.dewarp=true;}
+  $("qd").classList.add("open");$("qdLabel").textContent=(ei+1)+"枚目の四隅";
+  $("qdBusy").textContent="読み込み中…";$("qdBusy").classList.add("on");
+  try{
+    QD.im=await srcCanvas(p.src,p.opt.rot);
+    let q=p.opt.quad||p.det;
+    if(!q){const x=QD.im.getContext("2d",{willReadFrequently:true});const sm=ScanCore.resizeGray(x.getImageData(0,0,QD.im.width,QD.im.height),800);
+      const d=ScanCore.detectQuad(sm.g,sm.w,sm.h);if(d)q=d.map(pt=>[(pt[0]+0.5)/sm.w,(pt[1]+0.5)/sm.h]);}
+    QD.q=q?q.map(pt=>pt.slice()):[[0.04,0.04],[0.96,0.04],[0.96,0.96],[0.04,0.96]];
+    drawQuad();
+  }catch(e){console.error(e);toast("画像を開けませんでした");closeQuad();return;}
+  $("qdBusy").classList.remove("on");
+}
+function closeQuad(){$("qd").classList.remove("open");$("qdLoupe").style.display="none";QD.im=null;}
+function drawQuad(){
+  const cv=$("qdCv"),st=$("qdStage"),dpr=window.devicePixelRatio||1,cw=st.clientWidth,ch=st.clientHeight;if(!QD.im||!cw||!ch)return;
+  cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);
+  const x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,cw,ch);
+  const W=QD.im.width,H=QD.im.height,pad=22,k=Math.min((cw-2*pad)/W,(ch-2*pad)/H),bw=W*k,bh=H*k,bx=(cw-bw)/2,by=(ch-bh)/2;
+  QD.box={bx,by,bw,bh};x.drawImage(QD.im,bx,by,bw,bh);
+  const pts=QD.q.map(p=>[bx+p[0]*bw,by+p[1]*bh]);
+  x.beginPath();x.rect(0,0,cw,ch);x.moveTo(pts[0][0],pts[0][1]);for(let i=3;i>=0;i--)x.lineTo(pts[i][0],pts[i][1]);x.closePath();
+  x.fillStyle="rgba(0,0,0,.55)";x.fill("evenodd");
+  x.beginPath();pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.closePath();x.lineWidth=2;x.strokeStyle="#FFE14D";x.stroke();
+  pts.forEach((p,i)=>{x.beginPath();x.arc(p[0],p[1],QD.drag===i?15:12,0,Math.PI*2);x.fillStyle="rgba(255,225,77,.35)";x.fill();
+    x.lineWidth=3;x.strokeStyle="#FFE14D";x.stroke();x.beginPath();x.arc(p[0],p[1],2.5,0,Math.PI*2);x.fillStyle="#FFE14D";x.fill();});
+}
+function drawLoupe(i){
+  const L=$("qdLoupe"),x=L.getContext("2d"),b=QD.box,W=QD.im.width,H=QD.im.height,p=QD.q[i],cx=p[0]*W,cy=p[1]*H,r=Math.max(W,H)*0.035;
+  x.fillStyle="#000";x.fillRect(0,0,264,264);x.drawImage(QD.im,cx-r,cy-r,2*r,2*r,0,0,264,264);
+  x.strokeStyle="#FFE14D";x.lineWidth=2;x.beginPath();x.moveTo(132,112);x.lineTo(132,152);x.moveTo(112,132);x.lineTo(152,132);x.stroke();
+  L.style.display="block";const left=p[0]*b.bw+b.bx>$("qdStage").clientWidth/2;L.style.left=left?"8px":"auto";L.style.right=left?"auto":"8px";
+}
+(function(){
+  const st=$("qdStage"),pos=e=>{const r=st.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
+  st.addEventListener("pointerdown",e=>{if(!QD.box)return;const[px,py]=pos(e),b=QD.box;let best=-1,bd=48;
+    QD.q.forEach((q,i)=>{const d=Math.hypot(b.bx+q[0]*b.bw-px,b.by+q[1]*b.bh-py);if(d<bd){bd=d;best=i;}});
+    if(best<0)return;QD.drag=best;QD.off=[b.bx+QD.q[best][0]*b.bw-px,b.by+QD.q[best][1]*b.bh-py];
+    st.setPointerCapture(e.pointerId);drawQuad();drawLoupe(best);e.preventDefault();});
+  st.addEventListener("pointermove",e=>{if(QD.drag<0)return;const[px,py]=pos(e),b=QD.box;
+    QD.q[QD.drag]=[Math.min(1,Math.max(0,(px+QD.off[0]-b.bx)/b.bw)),Math.min(1,Math.max(0,(py+QD.off[1]-b.by)/b.bh))];drawQuad();drawLoupe(QD.drag);});
+  const up=()=>{if(QD.drag<0)return;QD.drag=-1;$("qdLoupe").style.display="none";drawQuad();};
+  st.addEventListener("pointerup",up);st.addEventListener("pointercancel",up);
+  window.addEventListener("resize",()=>{if($("qd").classList.contains("open"))drawQuad();});
+})();
+function orderQuad(qs){
+  const c=qs.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]);
+  const q=qs.slice().sort((a,b)=>Math.atan2(a[1]-c[1],a[0]-c[0])-Math.atan2(b[1]-c[1],b[0]-c[0]));
+  let s=0;for(let i=1;i<4;i++)if(q[i][0]+q[i][1]<q[s][0]+q[s][1])s=i;
+  const o=[0,1,2,3].map(k=>q[(s+k)%4]);
+  for(let i=0;i<4;i++){const a=o[i],b=o[(i+1)%4],d=o[(i+2)%4];if((b[0]-a[0])*(d[1]-b[1])-(b[1]-a[1])*(d[0]-b[0])<=1e-4)return null;}
+  return o;
+}
+async function applyQuad(q){
+  const p=P.pages[ei];
+  if(p.opt.strokes.length&&!confirm("ページの形が変わるため、消しゴムの跡はリセットされます。よろしいですか？"))return;
+  p.opt.strokes=[];if(q)p.opt.quad=q;else delete p.opt.quad;p.opt.dewarp=true;
+  $("qdBusy").textContent="補正しています…";$("qdBusy").classList.add("on");
+  try{await processPage(p);}catch(e){console.error(e);toast("補正できませんでした");}
+  $("qdBusy").classList.remove("on");closeQuad();await loadEd();
+  toast(q?"四隅に合わせて補正しました":p.det?"自動で補正しました":"ふちが見つからないため、行の傾きと曲がりだけ直しました");
+}
+$("tQuad").onclick=openQuad;$("qdClose").onclick=closeQuad;
+$("qdApply").onclick=()=>{const q=orderQuad(QD.q);if(!q){toast("四隅の位置がねじれています。置き直してください");return;}applyQuad(q);};
+$("qdAuto").onclick=()=>applyQuad(null);
+$("qdFull").onclick=()=>applyQuad([[0,0],[1,0],[1,1],[0,1]]);
 $("rotAllR").onclick=()=>rotateAll(90);$("rotAllL").onclick=()=>rotateAll(-90);
 $("splitChk").onchange=async e=>{P.settings.split=e.target.checked;await saveMeta();};
 $("titleIn").onchange=async e=>{P.settings.title=e.target.value.trim();await saveMeta();};
